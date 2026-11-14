@@ -39,8 +39,8 @@ jobs:
           git -C o worktree add ../o-baseline origin/master
           python -m venv /tmp/o-baseline-venv
           python -m venv /tmp/o-pr-venv
-          /tmp/o-baseline-venv/bin/python -m pip install -q -e ./almasi -e ./o-baseline
-          /tmp/o-pr-venv/bin/python -m pip install -q -e ./almasi -e ./o
+          /tmp/o-baseline-venv/bin/python -m pip install -q -e ./almasi -e ./o-baseline jsonschema
+          /tmp/o-pr-venv/bin/python -m pip install -q -e ./almasi -e ./o jsonschema
 
       - name: Compare same-runner publication and dispatch costs
         run: |
