@@ -126,6 +126,29 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 
+
+	# Remote changes invalidate cached objects even without subscribers.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_unobserved_remote_change_invalidates_cache(cls):
+		sync     = cls._sync()
+		owner_id = 1000002
+		cache    = o.services.Cache.entities
+		original = cache.get(owner_id)
+		changed  = threading.Event()
+		cache[owner_id] = SimpleNamespace(__invalidate__=changed.set)
+
+		try:
+			sync.publish_change([owner_id], local=False)
+			assert changed.wait(timeout=2), 'Remote invalidation was skipped'
+		finally:
+			if original is None:
+				cache.pop(owner_id, None)
+			else:
+				cache[owner_id] = original
+
+			cls._finish(sync)
+
 	# Pending IDs must remain invisible until the outer commit publishes.
 	# ----------------------------------------------------------------------
 	@classmethod
