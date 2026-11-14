@@ -121,9 +121,9 @@ class TestSync(o.Tester):
 			assert received.empty() and forwarded.empty()
 		finally:
 			release.set()
-			sync.unsubscribe(blocker)
-			sync.unsubscribe(listener)
-			sync.unsubscribe(sender)
+			blocker.cancel()
+			listener.cancel()
+			sender.cancel()
 
 	# A new subscriber observes future writes, not old unobserved commits.
 	# ----------------------------------------------------------------------
@@ -137,7 +137,7 @@ class TestSync(o.Tester):
 			callback = sync.subscribe(received.put)
 			sync.publish_change([22])
 			assert received.get(timeout=2) == frozenset({22})
-			sync.unsubscribe(callback)
+			callback.cancel()
 			sync.publish_change([33])
 			sync.subscribe(received.put)
 			sync.publish_change([44])
@@ -317,8 +317,7 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 
-	# Capture the watched set at subscribe time. A second registration of
-	# the same callback replaces its scope rather than duplicating delivery.
+	# Snapshot the watched set and update the existing handle without duplication.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_filtered_subscription_snapshot_and_replace(cls):
@@ -331,7 +330,7 @@ class TestSync(o.Tester):
 		try:
 			sync.subscribe(global_q.put)
 			callback = sync.subscribe(watched, results.put)
-			assert callback == results.put
+			assert isinstance(callback, o.Subscription)
 
 			watched.clear()
 			watched.add(102)
@@ -341,7 +340,7 @@ class TestSync(o.Tester):
 			assert global_q.get(timeout=2) == frozenset({101})
 			assert results.get(timeout=2) == frozenset({101})
 
-			sync.subscribe({102}, callback)
+			callback.update({102})
 			pending.setdefault(804, []).append(101)
 			pending.setdefault(804, []).append(102)
 			sync.publish_change(pending.pop(804), local=True)
@@ -358,7 +357,7 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 
-	# Unsubscribing a selective callback stops further notifications,
+	# Canceling a selective subscription stops further notifications,
 	# while a global callback continues to receive the same changes.
 	# ----------------------------------------------------------------------
 	@classmethod
@@ -371,7 +370,7 @@ class TestSync(o.Tester):
 		try:
 			sync.subscribe(global_q.put)
 			callback = sync.subscribe({121}, filtered.put)
-			sync.unsubscribe(callback)
+			callback.cancel()
 
 			pending.setdefault(805, []).append(121)
 			sync.publish_change(pending.pop(805), local=True)
@@ -395,7 +394,7 @@ class TestSync(o.Tester):
 
 		try:
 			callback = sync.subscribe(callback=results.put)
-			assert callback == results.put
+			assert isinstance(callback, o.Subscription)
 			pending.setdefault(807, []).append(141)
 			sync.publish_change(pending.pop(807), local=True)
 			assert results.get(timeout=2) == frozenset({141})
@@ -411,7 +410,7 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 
-	# Unsubscribe excludes a callback from future dispatch.
+	# Cancel excludes a registration from future dispatch.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_unsubscribe(cls):
@@ -421,7 +420,7 @@ class TestSync(o.Tester):
 		callback = sync.subscribe(results.put)
 
 		try:
-			sync.unsubscribe(callback)
+			callback.cancel()
 			pending.setdefault(40, []).append(81)
 			sync.publish_change(pending.pop(40), local=True)
 
@@ -476,7 +475,7 @@ class TestSync(o.Tester):
 
 				cls._finish(sync)
 
-			assert errors == ['O Sync subscriber failed'] * 2
+			assert errors == ['Subscription callback failed'] * 2
 		finally:
 			cls._finish(sync)
 
@@ -681,12 +680,12 @@ class TestSync(o.Tester):
 		second  = Queue()
 
 		def change_subscriptions(ids):
-			sync.unsubscribe(change_subscriptions)
+			handle.cancel()
 			sync.subscribe(second.put)
 			first.put(ids)
 
 		try:
-			sync.subscribe(change_subscriptions)
+			handle = sync.subscribe(change_subscriptions)
 			pending.setdefault(304, []).append(111)
 			sync.publish_change(pending.pop(304), local=True)
 			assert first.get(timeout=2) == frozenset({111})
@@ -747,6 +746,46 @@ class TestSync(o.Tester):
 			assert observed == set(range(1399, 1600))
 		finally:
 			release.set()
+			cls._finish(sync)
+
+	# Registering the same callback twice creates independent subscriptions.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_independent_duplicate_callback_registrations(cls):
+		sync    = cls._sync()
+		received = Queue()
+
+		try:
+			first  = sync.subscribe({1001}, received.put)
+			second = sync.subscribe({1002}, received.put)
+
+			assert first is not second
+			first.cancel()
+			sync.publish_change([1001, 1002])
+			assert received.get(timeout=2) == frozenset({1002})
+			assert received.empty()
+		finally:
+			cls._finish(sync)
+
+	# A local-only handle keeps its filter update and never echoes remote IPC.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_local_only_handle_update_and_cancel(cls):
+		sync     = cls._sync()
+		forwarded = Queue()
+
+		try:
+			handle = sync.subscribe({2001}, forwarded.put, local_only=True)
+			handle.update({2002})
+			sync.publish_change([2001], local=True)
+			sync.publish_change([2002], local=False)
+			sync.publish_change([2002], local=True)
+			assert forwarded.get(timeout=2) == frozenset({2002})
+
+			handle.cancel()
+			sync.publish_change([2002], local=True)
+			assert forwarded.empty()
+		finally:
 			cls._finish(sync)
 
 	# A real LMDB commit must be visible to subscribers running on the
