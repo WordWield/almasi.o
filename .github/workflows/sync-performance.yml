@@ -14,14 +14,12 @@ on:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
 
     steps:
       - name: Checkout O
         uses: actions/checkout@v4
         with:
           path: o
-          fetch-depth: 0
 
       - name: Checkout Almasi
         uses: actions/checkout@v4
@@ -34,91 +32,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install baseline and candidate
+      - name: Install runtime dependencies
         run: |
-          git -C o worktree add ../o-baseline origin/master
-          python -m venv /tmp/o-baseline-venv
-          python -m venv /tmp/o-pr-venv
-          /tmp/o-baseline-venv/bin/python -m pip install -q -e ./almasi -e ./o-baseline jsonschema
-          /tmp/o-pr-venv/bin/python -m pip install -q -e ./almasi -e ./o jsonschema
+          python -m pip install -e ./almasi
+          python -m pip install -e ./o
+          python -m pip install jsonschema
 
-      - name: Compare same-runner publication and dispatch costs
-        run: |
-          python - <<'PY'
-          import json
-          import statistics
-          import subprocess
-          import textwrap
-
-          versions = {
-              'master': ('/tmp/o-baseline-venv/bin/python', 'o-baseline/root/tests/_test_performance_sync_overhead.py'),
-              'pr': ('/tmp/o-pr-venv/bin/python', 'o/root/tests/_test_performance_sync_overhead.py'),
-          }
-
-          samples = {version: {} for version in versions}
-
-          # Alternate version order on one runner to limit environmental bias.
-          for round_index in range(5):
-              order = tuple(versions) if round_index % 2 == 0 else tuple(reversed(versions))
-              for version in order:
-                  executable, script = versions[version]
-                  for mode in ('stub', 'paused', 'worker', 'subscriber'):
-                      completed = subprocess.run(
-                          [executable, script, '--_json', '--mode', mode, '--size', '5000'],
-                          capture_output=True, text=True,
-                      )
-                      if completed.returncode:
-                          raise RuntimeError(f'{version}/{mode}: {completed.stdout}\n{completed.stderr}')
-                      values = json.loads(completed.stdout.strip().splitlines()[-1])
-                      for metric, microseconds in values.items():
-                          samples[version].setdefault((mode, metric), []).append(microseconds)
-                  print(f'Round {round_index + 1}, {version}: done', flush=True)
-
-          print('\nEnd-to-end/producer: median microseconds per operation')
-          print('mode         metric               master       pr    delta')
-          for key in samples['master']:
-              before = statistics.median(samples['master'][key])
-              after = statistics.median(samples['pr'][key])
-              print(f'{key[0]:12} {key[1]:17} {before:8.3f} {after:8.3f} {100*(after/before-1):+7.1f}%')
-
-          # Measure the affected worker delivery path separately.
-          worker = textwrap.dedent('''
-              import json
-              import time
-              import o
-
-              sync = o.services.Sync
-              sync.initialize()
-              results = {}
-              for count in (0, 1, 10):
-                  registrations = [sync.subscribe({123}, lambda ids: None) for _ in range(count)]
-                  changed = frozenset({123})
-                  begin = time.perf_counter_ns()
-                  for iteration in range(20000):
-                      sync._update(changed, local=True)
-                  results[str(count)] = (time.perf_counter_ns() - begin) / 20000000
-                  for registration in registrations:
-                      if hasattr(registration, 'cancel'):
-                          registration.cancel()
-                      else:
-                          sync.unsubscribe(registration)
-              print(json.dumps(results))
-          ''')
-          dispatch = {version: {} for version in versions}
-          for round_index in range(5):
-              order = tuple(versions) if round_index % 2 == 0 else tuple(reversed(versions))
-              for version in order:
-                  executable, _ = versions[version]
-                  completed = subprocess.run([executable, '-c', worker], capture_output=True, text=True, cwd='o-baseline' if version == 'master' else 'o')
-                  if completed.returncode:
-                      raise RuntimeError(f'{version}/worker: {completed.stdout}\n{completed.stderr}')
-                  values = json.loads(completed.stdout.strip().splitlines()[-1])
-                  for count, microseconds in values.items():
-                      dispatch[version].setdefault(count, []).append(microseconds)
-
-          print('\nWorker dispatch: median microseconds per batch')
-          for count in ('0', '1', '10'):
-              before = statistics.median(dispatch['master'][count])
-              after = statistics.median(dispatch['pr'][count])
-              print(f'{count:>2} callbacks: master={before:.3f}, PR={after:.3f}, delta={100*(after/before-1):+.1f}%')
-          PY
+      - name: 'Benchmark Sync producer and worker overhead'
+        working-directory: o
+        run: python root/tests/_test_performance_sync_overhead.py --size 3000 --rounds 3
