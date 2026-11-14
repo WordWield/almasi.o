@@ -76,7 +76,7 @@ class Sync(o.Subscribable):
 	def initialize(self):
 		# Only the worker handles delivery.
 		# --------------------------------------------------------------
-		self._queue       = SimpleQueue()
+		self._queue = SimpleQueue()
 
 		self._worker = threading.Thread(
 			target = self._run_worker_loop,
@@ -99,11 +99,13 @@ class Sync(o.Subscribable):
 			if not callable(callback):
 				raise TypeError('Sync subscriber must be callable')
 
-			# Remote batches still use common dispatch but never reach Transport.
+			# Close over the original callback before wrapping remote events.
 			# --------------------------------------------------------------
+			target = callback
+
 			def local_callback(changed):
 				if self._delivery_local:
-					callback(changed)
+					target(changed)
 
 			callback = local_callback
 
