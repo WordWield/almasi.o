@@ -3,10 +3,12 @@ name: O Sync performance
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
     paths:
-      - 'root/tests/_test_performance_sync.py'
+      - 'root/services/sync.py'
+      - 'root/tests/_test_performance_sync_overhead.py'
       - '.github/workflows/sync-performance.yml'
-      - 'root/tests/_test_performance_sync_hotpath.py'
   workflow_dispatch:
 
 jobs:
@@ -36,6 +38,6 @@ jobs:
           python -m pip install -e ./o
           python -m pip install jsonschema
 
-      - name: 'Benchmark Sync transaction hot path'
+      - name: 'Benchmark Sync producer and worker overhead'
         working-directory: o
-        run: python root/tests/_test_performance_sync_hotpath.py --size 10000 --rounds 7
+        run: python root/tests/_test_performance_sync_overhead.py --size 3000 --rounds 3
