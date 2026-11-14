@@ -77,33 +77,53 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 
-	# Coalesce only adjacent events of the same origin; None dominates.
+	# A real worker coalesces adjacent events without crossing origin boundaries.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_coalesced_publication_order(cls):
-		sync      = cls._sync()
-		received  = []
-		forwarded = []
+		sync      = o.services.Sync
+		entered   = threading.Event()
+		release   = threading.Event()
+		received  = Queue()
+		forwarded = Queue()
+
+		# Hold the existing worker while committed notifications accumulate.
+		# --------------------------------------------------------------
+		def block(ids):
+			entered.set()
+			assert release.wait(timeout=5), 'Sync worker did not resume'
+
+		blocker  = sync.subscribe({1000001}, block)
+		listener = sync.subscribe({11, 22, 33, 44, 55}, received.put)
+		sender   = sync.subscribe({11, 22, 33, 44, 55}, forwarded.put, local_only=True)
 
 		try:
-			sync.subscribe(received.append)
-			sync.subscribe(forwarded.append, local_only=True)
+			sync.publish_change([1000001])
+			assert entered.wait(timeout=5), 'Sync worker did not enter callback'
 
-			# A remote invalidation cannot join a local group or be echoed.
-			# --------------------------------------------------------------
-			sync._deliver([
-				([11, 11], True),
-				([22], True),
-				([33], False),
-				([44], True),
-				(None, True),
-				([55], True),
-			])
+			sync.publish_change([11, 11])
+			sync.publish_change([22])
+			sync.publish_change([33], local=False)
+			sync.publish_change([44])
+			sync.publish_change(None)
+			sync.publish_change([55])
+			release.set()
 
-			assert received == [frozenset({11, 22}), frozenset({33}), None]
-			assert forwarded == [frozenset({11, 22}), None]
+			assert [received.get(timeout=5) for _ in range(3)] == [
+				frozenset({11, 22}),
+				frozenset({33}),
+				None,
+			]
+			assert [forwarded.get(timeout=5) for _ in range(2)] == [
+				frozenset({11, 22}),
+				None,
+			]
+			assert received.empty() and forwarded.empty()
 		finally:
-			cls._finish(sync)
+			release.set()
+			sync.unsubscribe(blocker)
+			sync.unsubscribe(listener)
+			sync.unsubscribe(sender)
 
 	# A new subscriber observes future writes, not old unobserved commits.
 	# ----------------------------------------------------------------------
