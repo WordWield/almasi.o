@@ -58,64 +58,63 @@ graph for a new world), independent of notifications. See
 
 ## Subscriber API
 
+Sync extends Almasi's `Subscribable` service. It delegates subscriber
+registration, change matching, lifecycle and exception isolation to the
+shared implementation; its existing worker and transport remain O-owned.
+
 | Call | Contract |
 | --- | --- |
 | `sync.subscribe(callback)` | Observe every owner change |
 | `sync.subscribe(callback=callback)` | Same, explicit keyword |
-| `sync.subscribe({id1, id2}, callback)` | Observe only those owner IDs |
-| `sync.subscribe(frozenset(ids), callback)` | Immutable-set variant |
-| `sync.subscribe(callback, local_only=True)` | Notify only for changes originating in this process |
-| `sync.publish_change(ids, local=False)` | Enqueue an external invalidation |
-| `sync.unsubscribe(callback)` | Remove the callback from future deliveries |
+| `sync.subscribe({id1, id2}, callback)` | Observe selected owner IDs |
+| `sync.subscribe(callback, local_only=True)` | Transport-only local changes |
+| `subscription.update({id3, id4})` | Replace this registration's owner filter |
+| `subscription.cancel()` | Stop future delivery (idempotent, nonblocking) |
+| `sync.publish_change(ids, local=False)` | Enqueue external invalidation |
 
-`subscribe` returns the **callback**, not a separate token.
-Subscriptions are keyed by callback: registering the same callback again
-**replaces its filter** rather than adding another listener. The ID input
-must be a `set` or `frozenset`; it is snapshotted at registration, so
-mutating the caller's set later has no effect. A filtered callback receives
-only matching IDs; a global callback receives the full delivered batch.
+Each `subscribe()` returns a distinct `a.Subscription` handle even if the
+same callback is registered more than once. Callbacks are no longer subscription
+keys: callers retain their handle and use its `update()` and `cancel()`
+methods instead of `sync.unsubscribe(callback)`.
 
-All subscriptions run through one `_update()` delivery point. Ordinary subscribers
-receive local and externally received changes. A `local_only=True` subscriber
-receives only local changes; Transport uses this filter to publish IPC updates
-without echoing incoming messages. Incoming changes are queued with `publish_change(ids, local=False)`,
-invalidate the local cache, and then notify ordinary subscribers.
+The ID filter must be a `set`, `frozenset`, or `None`. All filters are
+snapshotted; changing the input set does not affect a subscription. `None`
+as a filter means all ordinary changes, while an empty set matches no
+ordinary changes. `None` as an event denotes a full invalidation delivered
+to all active subscribers, including empty-filter subscriptions. The value
+`0` is an ordinary ID, not a special sentinel.
 
-A filtered **empty** set receives no ordinary change events, but still
-receives a full invalidation (`None`). An unknown owner is represented by
-`None` at the Memory boundary; `0` is not a full-invalidation sentinel.
-When full and specific invalidations combine in a write batch, `None`
-supersedes the IDs. Unsubscribing an unknown callback is harmless.
+O's optional `local_only=True` remains a source-specific modifier. Its
+subscribers see only changes originated by this process; Transport uses it
+to forward invalidations without echoing incoming IPC. Remote changes are
+always queued and invalidate the local cache **before** notifying ordinary
+subscribers.
 
-Callbacks receive `frozenset[int] | None` and execute on the **`o-sync` worker
-thread**, not the writer's thread or an asyncio task. Cross-thread consumers
-must hand off to their own loop, e.g. via
-`loop.call_soon_threadsafe(...)`. Subscribers may safely subscribe or
-unsubscribe during dispatch: the worker copies the current mapping while
-holding a short lock, then invokes callbacks without the lock. A callback
-exception is logged and other callbacks still run. Slow callbacks block
-subsequent worker delivery, **not** the writer's transaction path.
+Callbacks receive `frozenset[int] | None` and run on the `o-sync` worker
+thread. Cross-thread consumers hand off to their own event loop. Dispatch
+uses the filter snapshot from the beginning of each batch. `update()` takes
+effect on later batches. `cancel()` does not wait for a callback already
+running; subsequent deliveries skip canceled registrations. Callbacks can
+register or cancel subscriptions reentrantly. One callback's exception is
+logged without suppressing delivery to the others.
 
-Example of subscription-scope replacement around the initial tracked read:
+Example of narrowing the initial broad watch after tracked computation:
 
 ~~~python
-reads    = []
-callback = sync.subscribe(on_change)     # Broad scope before first read
+reads = []
+subscription = sync.subscribe(on_change)
 
 try:
 	with o.services.Tracker.track_reads(reads):
 		value = o.V.counter['count']
 
-	sync.subscribe(set(reads), callback)  # Watch the actual owners
+	subscription.update(set(reads))
 finally:
-	sync.unsubscribe(callback)
+	subscription.cancel()
 ~~~
 
-This assumes `o.V.counter` and `on_change` already exist. It only
-illustrates scope ownership, not a complete reactive consumer: application
-infrastructure must handle in-flight invalidation, the read/listen race,
-async handoff, overlapping refetches and replacing dependencies on every
-recomputation. Web owns those mechanisms.
+This illustrates O's source API only. The consuming application
+infrastructure owns result caching, refetch policy, and its own view lifecycle.
 
 ## Producer API (O infrastructure only)
 
@@ -177,7 +176,7 @@ Consumers re-read committed state through O APIs.
 
 ## Verification and non-goals
 
-- `test_sync.py`: filtered/global/empty subscriptions, scope replacement,
+- `test_sync.py`: filtered/global/empty subscriptions, scope update,
   None/full invalidation, worker-thread callbacks, origin-preserving burst
   coalescing, no replay of unobserved changes, commit visibility, abort,
   concurrent producers, blocking queue delivery, reentrant and failing
@@ -189,7 +188,7 @@ Consumers re-read committed state through O APIs.
   `--sync stub` compares native Sync with no-op producer callbacks, not
   distributed transport or browser latency.
 
-Sync itself is **in-process, non-durable, non-replayable**. Optional Transport
+The common subscription mechanism is specified in\n[Almasi Subscribable](https://github.com/apodgorny/almasi/blob/master/docs/architecture.subscribable.md).\n\nSync itself is **in-process, non-durable, non-replayable**. Optional Transport
 provides host-local invalidation forwarding; Sync never references Transport
 or owns its lifecycle. There is no revision ordering, authorization or UI
 responsibility in Sync.
