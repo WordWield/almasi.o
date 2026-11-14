@@ -42,7 +42,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 			sync.publish_change([DRAIN_ID])
 			assert done.wait(10), 'Sync worker did not drain'
 		finally:
-			sync.unsubscribe(callback)
+			callback.cancel()
 
 	# Each sample runs in a fresh process with an independent LMDB store.
 	# ----------------------------------------------------------------------
@@ -108,7 +108,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 					release.set()
 
 				if callback is not None:
-					sync.unsubscribe(callback)
+					callback.cancel()
 
 				if mode != 'stub':
 					cls._drain(sync)
