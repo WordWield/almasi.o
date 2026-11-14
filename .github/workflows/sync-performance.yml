@@ -109,7 +109,7 @@ jobs:
               order = tuple(versions) if round_index % 2 == 0 else tuple(reversed(versions))
               for version in order:
                   executable, _ = versions[version]
-                  completed = subprocess.run([executable, '-c', worker], capture_output=True, text=True)
+                  completed = subprocess.run([executable, '-c', worker], capture_output=True, text=True, cwd='o-baseline' if version == 'master' else 'o')
                   if completed.returncode:
                       raise RuntimeError(f'{version}/worker: {completed.stdout}\n{completed.stderr}')
                   values = json.loads(completed.stdout.strip().splitlines()[-1])
