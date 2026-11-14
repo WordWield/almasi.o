@@ -36,16 +36,14 @@ class Sync(o.Service):
 		full = ids is None
 
 		for callback, (watched, local_only) in callbacks:
-			if not local and local_only:
-				continue
+			if local or not local_only:
+				matching = ids if full or watched is None else ids & watched
 
-			matching = ids if full or watched is None else ids & watched
-
-			if full or matching:
-				try:
-					callback(matching)
-				except Exception:
-					logging.exception('O Sync subscriber failed')
+				if full or matching:
+					try:
+						callback(matching)
+					except Exception:
+						logging.exception('O Sync subscriber failed')
 
 	# Merge adjacent invalidations without changing local/remote ordering.
 	# ----------------------------------------------------------------------
