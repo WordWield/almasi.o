@@ -72,7 +72,7 @@ class Sync(o.Service):
 			sleep(0.0001)
 			events = [first]
 
-			for index in range(self._queue.qsize()):
+			for _ in range(self._queue.qsize()):
 				events.append(self._queue.get_nowait())
 
 			self._deliver(events)
