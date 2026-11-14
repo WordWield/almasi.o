@@ -24,12 +24,12 @@ class TestTrackerPublicApi(o.Tester):
 	def _observe_writes(cls):
 		sync     = o.services.Sync
 		received = Queue()
-		callback = sync.subscribe(received.put)
+		subscription = sync.subscribe(received.put)
 
 		try:
 			yield received
 		finally:
-			sync.unsubscribe(callback)
+			subscription.cancel()
 
 	# Wait until all expected owners have been published by Sync.
 	# ----------------------------------------------------------------------
