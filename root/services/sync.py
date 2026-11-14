@@ -9,6 +9,7 @@ import os
 import threading
 
 from queue import SimpleQueue
+from time  import sleep
 
 import o
 
@@ -46,15 +47,37 @@ class Sync(o.Service):
 				except Exception:
 					logging.exception('O Sync subscriber failed')
 
-	# Deliver each queued change separately until the process exits.
+	# Merge adjacent invalidations without changing local/remote ordering.
+	# ----------------------------------------------------------------------
+	def _deliver(self, events):
+		changed = set()
+		local   = events[0][1]
+
+		for ids, origin in events:
+			if origin != local:
+				self._update(None if changed is None else frozenset(changed), local=local)
+				changed = set()
+				local   = origin
+
+			if ids is None:
+				changed = None
+			elif changed is not None:
+				changed.update(ids)
+
+		self._update(None if changed is None else frozenset(changed), local=local)
+
+	# Wait for work, then collect a bounded burst without busy polling.
 	# ----------------------------------------------------------------------
 	def _run_worker_loop(self):
 		while True:
-			event = self._queue.get()
+			first = self._queue.get()
+			sleep(0.0001)
+			events = [first]
 
-			ids, local = event
-			ids = None if ids is None else frozenset(ids)
-			self._update(ids, local=local)
+			for index in range(self._queue.qsize()):
+				events.append(self._queue.get_nowait())
+
+			self._deliver(events)
 
 	# ======================================================================
 	# PUBLIC METHODS
@@ -107,7 +130,8 @@ class Sync(o.Service):
 		with self._lock:
 			self._subscribers.pop(callback, None)
 
-	# Queue changes immediately; the worker dispatches each event.
+	# Skip unobserved local changes; remote changes still invalidate caches.
 	# ----------------------------------------------------------------------
 	def publish_change(self, ids, local=True):
-		self._queue.put((ids, local))
+		if not local or self._subscribers:
+			self._queue.put((ids, local))
