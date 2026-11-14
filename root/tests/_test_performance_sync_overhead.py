@@ -184,6 +184,6 @@ if __name__ == '__main__':
 		print()
 		print('stub: no Sync publication')
 		print('paused: real queue, worker blocked during timing')
-		print('worker: real Sync, no application subscribers')
+		print('worker: active Sync, no observers; local notifications are skipped')
 		print('subscriber: real Sync, one no-op subscriber')
 		print('Differences include thread scheduling/GIL, not just method execution.')

@@ -93,6 +93,11 @@ class TestPerformanceSync(o.Tester):
 			else:
 				result['delivery_latency'] = None
 
+			# Observe normal local Sync delivery during the throughput run.
+			# Otherwise an unobserved Sync would correctly skip queueing.
+			# --------------------------------------------------------------
+			observer = sync.subscribe(lambda ids: None) if mode == 'sync' else None
+
 			# A separate LMDB commit and owner notification per mutation.
 			# --------------------------------------------------------------
 			started = time.perf_counter_ns()
@@ -111,6 +116,10 @@ class TestPerformanceSync(o.Tester):
 					memory.set('sync/perf/batch', index, 12345)
 
 			result['write_batch'] = (time.perf_counter_ns() - started) / (1000 * size)
+
+			if observer is not None:
+				sync.unsubscribe(observer)
+
 			memory.env.close()
 
 		return result
@@ -192,5 +201,5 @@ if __name__ == '__main__':
 
 		print()
 		print('stub = LMDB + owner tracking, no Sync delivery')
-		print('sync = in-process Sync; ipc = Sync plus relay and a second socket peer')
+		print('sync = in-process Sync with observer; ipc = Sync plus relay and a second socket peer')
 		print('Delivery latency: local callback (sync) or peer frame receipt (ipc).')

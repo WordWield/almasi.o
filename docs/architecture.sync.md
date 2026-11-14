@@ -130,11 +130,14 @@ list to Sync in a single call, without copying or iterating it:
 sync.publish_change(ids, local=True)
 ~~~
 
-The hot path only enqueues the list. The worker independently processes each
-publication, deduplicates IDs within it with `frozenset`, filters subscribers,
-and forwards local events to Transport. Passing `None` requests full
-invalidation for listeners. Empty write batches, missing-key deletions, and
-empty-prefix deletions do not notify. Read transactions do not publish.
+A local commit without Sync subscribers needs no delivery and is not queued.
+A subscribed local commit enqueues the existing ID list without copying it.
+A remote invalidation is always queued, even without subscribers, because it
+must invalidate cached entities. The worker deduplicates IDs across adjacent
+publications from the same origin and forwards local notifications to Transport.
+Passing `None` requests full invalidation for listeners. Empty write batches,
+missing-key deletions, and empty-prefix deletions do not notify. Read
+transactions do not publish.
 
 If publication fails after commit, the transaction remains committed and
 `MemoryBatch` raises `RuntimeError('LMDB committed; Sync publication failed')`.
@@ -144,18 +147,23 @@ crashes after committing.
 ## Worker and delivery timing
 
 `Sync.initialize()` starts one worker. It blocks on `SimpleQueue.get()`
-until a change arrives, without timers or polling. `publish_change(ids, local)`
-enqueues one event without copying or processing IDs on the producer side.
-There is no pre-commit speculative fallback.
+until a change arrives. Once an event arrives, a 100 µs window lets further
+commits accumulate; the worker then drains the queue size captured at that
+moment and delivers the resulting bounded burst. There is no idle timer,
+wake flag, busy polling, or pre-commit speculative fallback.
 
 - `local=True`: the worker normalizes IDs, informs matching local subscribers,
   and notifies Transport through its `local_only` subscription. It does not
   invalidate the writer's local object cache.
 - `local=False`: the worker invalidates affected cached objects, then informs
   ordinary subscribers. It does not re-send the change through Transport.
-- Each queued event is delivered independently, in publication order. The
-  worker deduplicates IDs only within that event, treats `None` as full
-  invalidation, and isolates subscriber callback failures.
+- Adjacent events from the same origin in one worker cycle are coalesced into
+  one invalidation. Their owner IDs are unioned; `None` dominates that
+  origin's contiguous group. The worker preserves the order of local/remote
+  groups, so remote changes are never echoed to Transport. Subscriber callbacks
+  are invalidation hints, not per-commit events. Individual commit counts and
+  intermediate values are not observable through Sync. Subscriber failures
+  remain isolated.
 - The worker is a daemon thread and runs for the application process lifetime.
   There is no `Sync.close()`, shutdown sentinel or queue flush on process exit.
   Events still queued at exit may be lost.
@@ -170,9 +178,10 @@ Consumers re-read committed state through O APIs.
 ## Verification and non-goals
 
 - `test_sync.py`: filtered/global/empty subscriptions, scope replacement,
-  None/full invalidation, worker-thread callbacks, publication ordering,
-  commit visibility, no pre-commit publication, abort, concurrent producers,
-  blocking queue delivery, reentrant and failing callbacks, and blocked listeners.
+  None/full invalidation, worker-thread callbacks, origin-preserving burst
+  coalescing, no replay of unobserved changes, commit visibility, abort,
+  concurrent producers, blocking queue delivery, reentrant and failing
+  callbacks, and blocked listeners.
 - `test_write_tracking.py`: actual field, collection, class and instance
   ownership; transaction nesting, rollback, Zone cache recovery and
   post-commit failure.
