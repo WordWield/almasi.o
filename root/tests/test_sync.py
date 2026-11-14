@@ -31,9 +31,7 @@ class TestSync(o.Tester):
 				if event is self._test_stop:
 					break
 
-				ids, local = event
-				ids = None if ids is None else frozenset(ids)
-				self._update(ids, local=local)
+				self._deliver([event])
 
 		service_type = type('SyncTest', (type(o.services.Sync),), {'_run_worker_loop': run_worker})
 		service      = service_type()
@@ -79,25 +77,72 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 
-	# Separate publications retain their order, even when queued together.
+	# A burst merges adjacent origins without replaying remote events to IPC.
 	# ----------------------------------------------------------------------
 	@classmethod
-	def test_publication_order_without_grouping(cls):
-		sync     = cls._sync()
-		received = []
+	def test_coalesced_publication_order(cls):
+		sync      = type(o.services.Sync)()
+		sync.initialize()
+		entered   = threading.Event()
+		release   = threading.Event()
+		received  = Queue()
+		forwarded = Queue()
+
+		# Block a real worker so every event is queued before its next cycle.
+		# --------------------------------------------------------------
+		def block(ids):
+			entered.set()
+			assert release.wait(timeout=5), 'Sync worker did not resume'
+
+		blocker  = sync.subscribe({1000001}, block)
+		listener = sync.subscribe({11, 22, 33, 44, 55}, received.put)
+		sender   = sync.subscribe({11, 22, 33, 44, 55}, forwarded.put, local_only=True)
 
 		try:
-			sync.subscribe(received.append)
-			sync.publish_change([11, 11], local=True)
-			sync.publish_change([22], local=True)
-			sync.publish_change(frozenset({33}), local=False)
-			cls._finish(sync)
+			sync.publish_change([1000001])
+			assert entered.wait(timeout=5), 'Sync worker did not enter callback'
+			sync.publish_change([11, 11])
+			sync.publish_change([22])
+			sync.publish_change([33], local=False)
+			sync.publish_change([44])
+			sync.publish_change(None)
+			sync.publish_change([55])
+			release.set()
 
-			assert received == [
-				frozenset({11}),
-				frozenset({22}),
+			assert [received.get(timeout=5) for index in range(3)] == [
+				frozenset({11, 22}),
 				frozenset({33}),
+				None,
 			]
+			assert [forwarded.get(timeout=5) for index in range(2)] == [
+				frozenset({11, 22}),
+				None,
+			]
+			assert received.empty() and forwarded.empty()
+		finally:
+			release.set()
+			sync.unsubscribe(blocker)
+			sync.unsubscribe(listener)
+			sync.unsubscribe(sender)
+
+	# A new subscriber observes future writes, not old unobserved commits.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_unobserved_local_changes_are_not_replayed(cls):
+		sync     = cls._sync()
+		received = Queue()
+
+		try:
+			sync.publish_change([11])
+			callback = sync.subscribe(received.put)
+			sync.publish_change([22])
+			assert received.get(timeout=2) == frozenset({22})
+			sync.unsubscribe(callback)
+			sync.publish_change([33])
+			sync.subscribe(received.put)
+			sync.publish_change([44])
+			assert received.get(timeout=2) == frozenset({44})
+			assert received.empty()
 		finally:
 			cls._finish(sync)
 
