@@ -33,9 +33,7 @@ class ComputedResource(o.Module, o.Resource):
 	# Invalidate the current cache before notifying the interested listener.
 	# ----------------------------------------------------------------------
 	def _changed(self, changed, callback):
-		with self._lock:
-			self.value = o.Undefined
-
+		self.invalidate()
 		callback(changed)
 
 	# ==========================================================================
@@ -46,6 +44,12 @@ class ComputedResource(o.Module, o.Resource):
 	# ----------------------------------------------------------------------
 	def read(self):
 		return self.value
+
+	# Mark the cached result stale without changing its dependency subscriptions.
+	# ----------------------------------------------------------------------
+	def invalidate(self):
+		with self._lock:
+			self.value = o.Undefined
 
 	# Keep each listener independently registered in the existing Sync service.
 	# ----------------------------------------------------------------------
