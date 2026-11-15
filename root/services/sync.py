@@ -14,7 +14,7 @@ from time  import sleep
 import o
 
 
-class Sync(o.Service):
+class Sync(o.Subscribable):
 
 	# ======================================================================
 	# PRIVATE METHODS
@@ -30,20 +30,10 @@ class Sync(o.Service):
 				logging.exception('Critical cache invalidation failure')
 				os._exit(1)
 
-		with self._lock:
-			callbacks = tuple(self._subscribers.items())
-
-		full = ids is None
-
-		for callback, (watched, local_only) in callbacks:
-			if local or not local_only:
-				matching = ids if full or watched is None else ids & watched
-
-				if full or matching:
-					try:
-						callback(matching)
-					except Exception:
-						logging.exception('O Sync subscriber failed')
+		# Producer-specific origin gating stays behind the existing worker.
+		# --------------------------------------------------------------
+		self._delivery_local = local
+		self._dispatch(ids)
 
 	# Merge adjacent invalidations without changing local/remote ordering.
 	# ----------------------------------------------------------------------
@@ -86,9 +76,7 @@ class Sync(o.Service):
 	def initialize(self):
 		# Only the worker handles delivery.
 		# --------------------------------------------------------------
-		self._queue       = SimpleQueue()
-		self._lock        = threading.Lock()
-		self._subscribers = {}
+		self._queue = SimpleQueue()
 
 		self._worker = threading.Thread(
 			target = self._run_worker_loop,
@@ -97,39 +85,34 @@ class Sync(o.Service):
 		)
 		self._worker.start()
 
-	# Subscribe to all changes or only those originating in this process.
-	# Accept subscribe(callback) or subscribe({id, ...}, callback).
+	# Extend the shared registration with O's local-only Transport semantics.
 	# ----------------------------------------------------------------------
 	def subscribe(self, ids=None, callback=None, local_only=False):
-		if callback is None:
-			callback = ids
-			ids      = None
-
-		if not callable(callback):
-			raise TypeError('Sync subscriber must be callable')
-
 		if type(local_only) is not bool:
 			raise TypeError('local_only must be bool')
 
-		if ids is not None:
-			if not isinstance(ids, (set, frozenset)):
-				raise TypeError('Sync subscription IDs must be a set')
+		if local_only:
+			if callback is None:
+				callback = ids
+				ids      = None
 
-			ids = frozenset(ids)
+			if not callable(callback):
+				raise TypeError('Sync subscriber must be callable')
 
-		with self._lock:
-			self._subscribers[callback] = (ids, local_only)
+			# Close over the original callback before wrapping remote events.
+			# --------------------------------------------------------------
+			target = callback
 
-		return callback
+			def local_callback(changed):
+				if self._delivery_local:
+					target(changed)
 
-	# Stop notifications to the given callback.
-	# ----------------------------------------------------------------------
-	def unsubscribe(self, callback):
-		with self._lock:
-			self._subscribers.pop(callback, None)
+			callback = local_callback
+
+		return super().subscribe(ids, callback)
 
 	# Skip unobserved local changes; remote changes still invalidate caches.
 	# ----------------------------------------------------------------------
 	def publish_change(self, ids, local=True):
-		if not local or self._subscribers:
+		if not local or self._subscriptions:
 			self._queue.put((ids, local))

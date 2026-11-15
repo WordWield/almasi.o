@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 	type(o).__app__ = SimpleNamespace(__lib_path__=directory)
 	o.start()
 
-	assert not any(local_only for watched, local_only in o.services.Sync._subscribers.values())
+	assert not o.services.Sync._subscriptions
 	assert not any(thread.name == 'o-transport' for thread in threading.enumerate())
 '''
 		result = subprocess.run(
@@ -134,7 +134,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 
 			assert echo is None
 		finally:
-			o.services.Sync.unsubscribe(callback)
+			callback.cancel()
 
 			if original is None:
 				cache.pop(owner_id, None)
@@ -162,7 +162,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 			assert received.get(timeout=2) is None
 			assert changed == [owner_id]
 		finally:
-			o.services.Sync.unsubscribe(callback)
+			callback.cancel()
 
 			if original is None:
 				cache.pop(owner_id, None)
@@ -191,7 +191,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 
 			assert notification is None
 		finally:
-			o.services.Sync.unsubscribe(callback)
+			callback.cancel()
 			peer.close()
 
 
