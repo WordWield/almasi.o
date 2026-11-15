@@ -121,6 +121,11 @@ class Sync(o.Subscribable):
 		)
 		self._worker.start()
 
+	# Create an identified resource without keeping another resource registry.
+	# ----------------------------------------------------------------------
+	def resource(self, identifier):
+		return o.ComputedResource(identifier)
+
 	# Bind a computed resource to its observed O owners, initially broad.
 	# Preserve one independent source Subscription per listener.
 	# ----------------------------------------------------------------------
