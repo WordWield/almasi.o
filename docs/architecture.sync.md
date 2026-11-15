@@ -59,8 +59,9 @@ graph for a new world), independent of notifications. See
 ## Subscriber API
 
 Sync extends Almasi's `Subscribable` service. It delegates subscriber
-registration, change matching, lifecycle and exception isolation to the
-shared implementation; its existing worker and transport remain O-owned.
+registration, lifecycle and exception isolation to the shared implementation.
+O implements its own indexed owner-ID matching in `_matches_generator()`;
+its existing worker and transport remain O-owned.
 
 | Call | Contract |
 | --- | --- |
