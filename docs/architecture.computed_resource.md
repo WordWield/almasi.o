@@ -33,12 +33,24 @@ on successful exit it updates the existing source subscriptions to those
 IDs and publishes the staged value. An exception abandons the candidate
 without changing the old dependency scope.
 
-A temporary broad O Sync observer is active while the block executes.
-If an intersecting invalidation is delivered during the block, its result
-is rejected with a `RuntimeError` explaining temporary unavailability.
-That internal exception is converted to an existing MCP error by Web;
-no protocol-specific error code is defined by O. Future O notifications
-can invalidate the value again; no function body is stored for replay.
+A temporary broad Sync registration is active while the block executes.
+Unlike ordinary asynchronous subscribers, this internal commit observer sees
+published owner IDs synchronously **after successful O commit and before**
+the update enters the worker queue. The source's publication lock also guards
+the final dependency replacement and value publication, so an intersecting
+locally published change cannot pass between conflict checking and the handoff.
+
+An intersecting change rejects the result with a retryable `RuntimeError`.
+No partially computed value or replacement dependency scope is published.
+Web translates that failure into the existing MCP `-32603` error.
+This reuses `a.Subscribable` registrations; no second dependency index, change
+revision, or replayable function is introduced.
+
+**Boundary:** an independent process may commit before its Transport message
+reaches this process. Sync cannot detect that unseen remote commit and makes
+no global ordering guarantee. Once the remote notification arrives, it
+invalidates relevant cached values normally. Strict multiprocess read
+linearizability remains unproven without a cross-process validation mechanism.
 
 ## Subscription source
 
