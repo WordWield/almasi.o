@@ -74,11 +74,15 @@ class ComputedResource(o.Resource, o.Module):
 				elif changes is not None:
 					changes.update(identifiers)
 
-	# Publish a completed result and update live source registrations.
+	# Commit under the source's publication lock to close the observation gap.
 	# ----------------------------------------------------------------------
 	def _commit(self, reads, sync):
-		identifiers = frozenset(reads)
+		sync.commit_resource(self, frozenset(reads))
 
+	# Validate the completed observation and publish the same resource instance.
+	# The source holds its lock before entering the resource's own lock.
+	# ----------------------------------------------------------------------
+	def _publish(self, identifiers, sync):
 		with self._lock:
 			changes = self._observed_changes
 
