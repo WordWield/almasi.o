@@ -126,11 +126,34 @@ class TestComputedResource(o.Tester):
 			with TestCase().assertRaisesRegex(RuntimeError, 'changed during read'):
 				with o.services.Tracker.track_reads(resource) as observed:
 					observed.value = item.count
-					o.services.Sync._dispatch(frozenset({item.id}))
+					o.services.Sync.publish_change(frozenset({item.id}))
 
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset()
 			assert handle._identifiers is None
+			handle.cancel()
+		finally:
+			cls._restore_runtime(state)
+
+	# A real committed write rejects the tracked result before worker delivery.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_committed_write_conflicts_without_worker_dispatch(cls):
+		state = cls._patch_runtime()
+
+		try:
+			Model    = o.T.extend('ComputedCommittedConflict', count=int)
+			item     = Model(count=1)
+			resource = o.ComputedResource('committed-conflict')
+			handle   = resource.subscribe(lambda changed: None)
+
+			with TestCase().assertRaisesRegex(RuntimeError, 'changed during read'):
+				with o.services.Tracker.track_reads(resource) as observed:
+					observed.value = item.count
+					item.count = 2
+
+			assert resource.value is o.Undefined
+			assert resource.dependencies == frozenset()
 			handle.cancel()
 		finally:
 			cls._restore_runtime(state)
