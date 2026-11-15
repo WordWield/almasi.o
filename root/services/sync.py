@@ -121,11 +121,27 @@ class Sync(o.Subscribable):
 		)
 		self._worker.start()
 
-	# Extend the shared registration with O's local-only Transport semantics.
+	# Bind a computed resource to its observed O owners, initially broad.
+	# Preserve one independent source Subscription per listener.
 	# ----------------------------------------------------------------------
 	def subscribe(self, ids=None, callback=None, local_only=False):
 		if type(local_only) is not bool:
 			raise TypeError('local_only must be bool')
+
+		resource = ids if isinstance(ids, o.ComputedResource) else None
+
+		if resource is not None:
+			if not callable(callback):
+				raise TypeError('Computed resource subscriber must be callable')
+
+			ids    = None if resource.value is o.Undefined and not resource.dependencies else resource.dependencies
+			target = callback
+
+			def resource_callback(changed):
+				resource._invalidate()
+				target(changed)
+
+			callback = resource_callback
 
 		if local_only:
 			if callback is None:
@@ -145,7 +161,22 @@ class Sync(o.Subscribable):
 
 			callback = local_callback
 
-		return super().subscribe(ids, callback)
+		with self._subscription_lock:
+			subscription = super().subscribe(ids, callback)
+
+			if resource is not None:
+				subscription._resource = resource
+
+		return subscription
+
+	# Refresh all current listeners of one computed resource in the source.
+	# Do not maintain a second resource-to-listener index.
+	# ----------------------------------------------------------------------
+	def update_resource(self, resource, identifiers):
+		with self._subscription_lock:
+			for subscription in tuple(self._subscriptions):
+				if getattr(subscription, '_resource', None) is resource:
+					self._update_subscription(subscription, identifiers)
 
 	# Skip unobserved local changes; remote changes still invalidate caches.
 	# ----------------------------------------------------------------------
