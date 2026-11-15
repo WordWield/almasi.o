@@ -91,8 +91,17 @@ to forward invalidations without echoing incoming IPC. Remote changes are
 always queued and invalidate the local cache **before** notifying ordinary
 subscribers.
 
-Callbacks receive `frozenset[int] | None` and run on the `o-sync` worker
-thread. Cross-thread consumers hand off to their own event loop. Dispatch
+Ordinary callbacks receive `frozenset[int] | None` and run on the
+`o-sync` worker thread. The internal `Sync.watch_commits(callback)` contract
+is different: a temporary broad `a.Subscription` observes successfully
+committed owner IDs synchronously on the publishing thread, before worker
+delivery. `Sync.commit_resource(resource, identifiers)` uses the same source
+lock to atomically validate observed changes, replace dependency scopes, and
+publish a completed resource value. These calls are reserved for
+`Tracker.track_reads(ComputedResource)`; ordinary clients should use
+`subscribe()` and receive worker-delivered hints as before.
+
+Cross-thread consumers hand off to their own event loop. Dispatch
 uses the filter snapshot from the beginning of each batch. `update()` takes
 effect on later batches. `cancel()` does not wait for a callback already
 running; subsequent deliveries skip canceled registrations. Callbacks can
@@ -130,8 +139,11 @@ list to Sync in a single call, without copying or iterating it:
 sync.publish_change(ids, local=True)
 ~~~
 
-A local commit without Sync subscribers needs no delivery and is not queued.
-A subscribed local commit enqueues the existing ID list without copying it.
+A local commit without Sync subscribers needs no worker delivery and is
+not queued. When a temporary computed-resource commit observer exists,
+Sync confirms it synchronously after commit, under the source lock, even
+though ordinary delivery stays queued. A subscribed local commit enqueues
+the existing ID list without copying it.
 A remote invalidation is always queued, even without subscribers, because it
 must invalidate cached entities. The worker deduplicates IDs across adjacent
 publications from the same origin and forwards local notifications to Transport.

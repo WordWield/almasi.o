@@ -53,7 +53,7 @@ class Sync(o.Subscribable):
 				changes if identifiers is None else changes & identifiers
 			)
 
-			if changes is None or matching:
+			if (changes is None or matching) and not getattr(subscription, '_commit_observer', False):
 				yield subscription, matching
 
 	# One delivery point for local and external invalidations.
@@ -121,11 +121,32 @@ class Sync(o.Subscribable):
 		)
 		self._worker.start()
 
-	# Extend the shared registration with O's local-only Transport semantics.
+	# Create an identified resource without keeping another resource registry.
+	# ----------------------------------------------------------------------
+	def resource(self, identifier):
+		return o.ComputedResource(identifier)
+
+	# Bind a computed resource to its observed O owners, initially broad.
+	# Preserve one independent source Subscription per listener.
 	# ----------------------------------------------------------------------
 	def subscribe(self, ids=None, callback=None, local_only=False):
 		if type(local_only) is not bool:
 			raise TypeError('local_only must be bool')
+
+		resource = ids if isinstance(ids, o.ComputedResource) else None
+
+		if resource is not None:
+			if not callable(callback):
+				raise TypeError('Computed resource subscriber must be callable')
+
+			ids             = None if resource.value is o.Undefined and not resource.dependencies else resource.dependencies
+			resource_target = callback
+
+			def resource_callback(changed):
+				resource._invalidate()
+				resource_target(changed)
+
+			callback = resource_callback
 
 		if local_only:
 			if callback is None:
@@ -137,18 +158,56 @@ class Sync(o.Subscribable):
 
 			# Close over the original callback before wrapping remote events.
 			# --------------------------------------------------------------
-			target = callback
+			local_target = callback
 
 			def local_callback(changed):
 				if self._delivery_local:
-					target(changed)
+					local_target(changed)
 
 			callback = local_callback
 
-		return super().subscribe(ids, callback)
+		with self._subscription_lock:
+			subscription = super().subscribe(ids, callback)
 
-	# Skip unobserved local changes; remote changes still invalidate caches.
+			if resource is not None:
+				subscription._resource = resource
+
+		return subscription
+
+	# Observe successful commits before the asynchronous delivery queue.
+	# Reuse a broad Subscribable registration rather than another observer index.
+	# ----------------------------------------------------------------------
+	def watch_commits(self, callback):
+		with self._subscription_lock:
+			subscription = super().subscribe(None, callback)
+			subscription._commit_observer = True
+
+		return subscription
+
+	# Commit the value and its dependencies with no gap against publication.
+	# The source lock precedes the resource lock in both competing operations.
+	# ----------------------------------------------------------------------
+	def commit_resource(self, resource, identifiers):
+		with self._subscription_lock:
+			resource._publish(identifiers, self)
+
+	# Refresh all current listeners of one computed resource in the source.
+	# Do not maintain a second resource-to-listener index.
+	# ----------------------------------------------------------------------
+	def update_resource(self, resource, identifiers):
+		with self._subscription_lock:
+			for subscription in tuple(self._subscriptions):
+				if getattr(subscription, '_resource', None) is resource:
+					self._update_subscription(subscription, identifiers)
+
+	# Confirm committed changes synchronously to in-flight observations.
+	# Ordinary listeners still receive only worker-delivered invalidations.
 	# ----------------------------------------------------------------------
 	def publish_change(self, ids, local=True):
-		if not local or self._subscriptions:
-			self._queue.put((ids, local))
+		with self._subscription_lock:
+			for subscription in tuple(self._broad):
+				if getattr(subscription, '_commit_observer', False) and subscription._active:
+					subscription._callback(ids)
+
+			if not local or self._subscriptions:
+				self._queue.put((ids, local))

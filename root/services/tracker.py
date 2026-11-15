@@ -320,18 +320,42 @@ class Tracker(o.Service):
 	# PUBLIC METHODS
 	# ======================================================================
 
-	# Record persistent read identities in one caller-owned list.
-	# Use the current fork's Tracker: o.services.Tracker.track_reads(ids).
-	# Nested calls, threads, and asynchronous tasks retain separate scopes.
+	# Observe caller-owned O reads, or stage one existing ComputedResource.
+	# Preserve raw list scopes and their nested task/thread behavior.
 	# ----------------------------------------------------------------------
 	@contextmanager
 	def track_reads(self, ids):
-		if not isinstance(ids, list):
-			raise TypeError('Read tracking requires a list')
+		resource = ids if isinstance(ids, o.ComputedResource) else None
+		reads    = [] if resource is not None else ids
 
-		self._enter(ids)
+		if not isinstance(reads, list):
+			raise TypeError('Read tracking requires a list or ComputedResource')
+
+		observation = None
+
+		if resource is not None:
+			resource._begin()
 
 		try:
-			yield
+			if resource is not None:
+				# Observe new owners while an existing subscription watches old ones.
+				# --------------------------------------------------------------
+				observation = o.services.Sync.watch_commits(resource._observe_change)
+
+			self._enter(reads)
+
+			try:
+				yield resource
+			except BaseException:
+				raise
+			else:
+				if resource is not None:
+					resource._commit(reads, o.services.Sync)
+			finally:
+				self._exit(reads)
 		finally:
-			self._exit(ids)
+			if observation is not None:
+				observation.cancel()
+
+			if resource is not None:
+				resource._end()
