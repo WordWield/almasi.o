@@ -18,12 +18,12 @@ class ComputedResource(o.Resource, o.Module):
 	# Start without a cached value or an inferred dependency scope.
 	# ----------------------------------------------------------------------
 	def __init__(self, identifier):
-		self.id               = identifier
-		self.dependencies     = frozenset()
-		self._value           = o.Undefined
-		self._candidate       = o.Undefined
+		self.id                = identifier
+		self.dependencies      = frozenset()
+		self._value            = o.Undefined
+		self._candidate        = o.Undefined
 		self._observed_changes = o.Undefined
-		self._lock            = threading.RLock()
+		self._lock             = threading.RLock()
 
 	# ==========================================================================
 	# PRIVATE METHODS
@@ -38,6 +38,8 @@ class ComputedResource(o.Resource, o.Module):
 
 		return result
 
+	# Stage assignment inside a tracked scope; otherwise replace the value.
+	# ----------------------------------------------------------------------
 	@value.setter
 	def value(self, value):
 		with self._lock:
