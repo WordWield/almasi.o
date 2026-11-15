@@ -10,7 +10,7 @@ import weakref
 import o
 
 
-class ComputedResource(o.Resource):
+class ComputedResource(o.Module, o.Resource):
 
 	# ==========================================================================
 	# FRAMEWORK METHODS
