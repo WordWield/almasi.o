@@ -134,12 +134,12 @@ class Sync(o.Subscribable):
 			if not callable(callback):
 				raise TypeError('Computed resource subscriber must be callable')
 
-			ids    = None if resource.value is o.Undefined and not resource.dependencies else resource.dependencies
-			target = callback
+			ids             = None if resource.value is o.Undefined and not resource.dependencies else resource.dependencies
+			resource_target = callback
 
 			def resource_callback(changed):
 				resource._invalidate()
-				target(changed)
+				resource_target(changed)
 
 			callback = resource_callback
 
@@ -153,11 +153,11 @@ class Sync(o.Subscribable):
 
 			# Close over the original callback before wrapping remote events.
 			# --------------------------------------------------------------
-			target = callback
+			local_target = callback
 
 			def local_callback(changed):
 				if self._delivery_local:
-					target(changed)
+					local_target(changed)
 
 			callback = local_callback
 
