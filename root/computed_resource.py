@@ -9,7 +9,7 @@ import threading
 import o
 
 
-class ComputedResource(o.Resource, o.Module):
+class ComputedResource(o.Resource):
 
 	# ==========================================================================
 	# FRAMEWORK METHODS
