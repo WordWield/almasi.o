@@ -53,7 +53,7 @@ class Sync(o.Subscribable):
 				changes if identifiers is None else changes & identifiers
 			)
 
-			if changes is None or matching:
+			if (changes is None or matching) and not getattr(subscription, '_commit_observer', False):
 				yield subscription, matching
 
 	# One delivery point for local and external invalidations.
@@ -174,6 +174,23 @@ class Sync(o.Subscribable):
 
 		return subscription
 
+	# Observe successful commits before the asynchronous delivery queue.
+	# Reuse a broad Subscribable registration rather than another observer index.
+	# ----------------------------------------------------------------------
+	def watch_commits(self, callback):
+		with self._subscription_lock:
+			subscription = super().subscribe(None, callback)
+			subscription._commit_observer = True
+
+		return subscription
+
+	# Commit the value and its dependencies with no gap against publication.
+	# The source lock precedes the resource lock in both competing operations.
+	# ----------------------------------------------------------------------
+	def commit_resource(self, resource, identifiers):
+		with self._subscription_lock:
+			resource._publish(identifiers, self)
+
 	# Refresh all current listeners of one computed resource in the source.
 	# Do not maintain a second resource-to-listener index.
 	# ----------------------------------------------------------------------
@@ -183,8 +200,14 @@ class Sync(o.Subscribable):
 				if getattr(subscription, '_resource', None) is resource:
 					self._update_subscription(subscription, identifiers)
 
-	# Skip unobserved local changes; remote changes still invalidate caches.
+	# Confirm committed changes synchronously to in-flight observations.
+	# Ordinary listeners still receive only worker-delivered invalidations.
 	# ----------------------------------------------------------------------
 	def publish_change(self, ids, local=True):
-		if not local or self._subscriptions:
-			self._queue.put((ids, local))
+		with self._subscription_lock:
+			for subscription in tuple(self._broad):
+				if getattr(subscription, '_commit_observer', False) and subscription._active:
+					subscription._callback(ids)
+
+			if not local or self._subscriptions:
+				self._queue.put((ids, local))
