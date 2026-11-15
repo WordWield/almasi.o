@@ -19,6 +19,14 @@ class TestComputedResource(o.Tester):
 	# PUBLIC METHODS
 	# ==========================================================================
 
+	# Resource supplies Module identity through exactly one shared ancestor.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_resource_module_symmetry(cls):
+		assert o.ComputedResource.__bases__ == (o.Resource,)
+		assert o.Resource.__bases__ == (o.Module,)
+		assert issubclass(o.ComputedResource, o.Module)
+
 	# Keep a stable resource while filling and invalidating its value.
 	# ----------------------------------------------------------------------
 	@classmethod
