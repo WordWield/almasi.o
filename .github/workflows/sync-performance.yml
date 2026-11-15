@@ -25,6 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: apodgorny/almasi
+          ref: fix/resource-module-symmetry-20261115
           path: almasi
 
       - name: Set up Python
