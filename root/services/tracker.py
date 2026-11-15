@@ -340,7 +340,7 @@ class Tracker(o.Service):
 			if resource is not None:
 				# Observe new owners while an existing subscription watches old ones.
 				# --------------------------------------------------------------
-				observation = o.services.Sync.subscribe(resource._observe_change)
+				observation = o.services.Sync.watch_commits(resource._observe_change)
 
 			self._enter(reads)
 
