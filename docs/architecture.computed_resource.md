@@ -5,7 +5,8 @@ on the generic Almasi Resource contract are verified separately.
 
 ## Meaning and responsibility
 
-`o.ComputedResource` is the O specialization of `a.Resource`. Its stable
+`o.ComputedResource(o.Resource)` inherits `Module` from the shared Almasi
+`Resource`, without another direct base. Its stable
 `id` is supplied by the caller, and its `value` is initially
 `o.Undefined`. `read()` returns that value and never invokes the code that
 computed it. `None` is a valid cached result.
