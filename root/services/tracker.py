@@ -320,16 +320,16 @@ class Tracker(o.Service):
 	# PUBLIC METHODS
 	# ======================================================================
 
-	# Observe caller-owned O reads, or stage one existing ComputedResource.
-	# Preserve raw list scopes and their nested task/thread behavior.
+	# Observe caller-owned O reads or an identified computed resource.
+	# Create a resource from a URI while preserving existing list/object scopes.
 	# ----------------------------------------------------------------------
 	@contextmanager
 	def track_reads(self, ids):
-		resource = ids if isinstance(ids, o.ComputedResource) else None
+		resource = o.services.Sync.resource(ids) if isinstance(ids, str) else ids if isinstance(ids, o.ComputedResource) else None
 		reads    = [] if resource is not None else ids
 
 		if not isinstance(reads, list):
-			raise TypeError('Read tracking requires a list or ComputedResource')
+			raise TypeError('Read tracking requires a list, URI or ComputedResource')
 
 		observation = None
 
