@@ -320,27 +320,20 @@ class Tracker(o.Service):
 	# PUBLIC METHODS
 	# ======================================================================
 
-	# Observe caller-owned O reads or an identified computed resource.
-	# Create a resource from a URI while preserving existing list/object scopes.
+	# Create and observe a fresh computed resource for the current scope.
 	# ----------------------------------------------------------------------
 	@contextmanager
-	def track_reads(self, ids):
-		resource = o.services.Sync.resource(ids) if isinstance(ids, str) else ids if isinstance(ids, o.ComputedResource) else None
-		reads    = [] if resource is not None else ids
-
-		if not isinstance(reads, list):
-			raise TypeError('Read tracking requires a list, URI or ComputedResource')
-
+	def track_reads(self):
+		resource    = o.ComputedResource()
+		reads       = []
 		observation = None
 
-		if resource is not None:
-			resource._begin()
+		resource._begin()
 
 		try:
-			if resource is not None:
-				# Observe new owners while an existing subscription watches old ones.
-				# --------------------------------------------------------------
-				observation = o.services.Sync.watch_commits(resource._observe_change)
+			# Observe new owners while the computation is in flight.
+			# --------------------------------------------------------------
+			observation = o.services.Sync.watch_commits(resource._observe_change)
 
 			self._enter(reads)
 
@@ -349,13 +342,11 @@ class Tracker(o.Service):
 			except BaseException:
 				raise
 			else:
-				if resource is not None:
-					resource._commit(reads, o.services.Sync)
+				resource._commit(reads, o.services.Sync)
 			finally:
 				self._exit(reads)
 		finally:
 			if observation is not None:
 				observation.cancel()
 
-			if resource is not None:
-				resource._end()
+			resource._end()
