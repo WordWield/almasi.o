@@ -320,11 +320,11 @@ class Tracker(o.Service):
 	# PUBLIC METHODS
 	# ======================================================================
 
-	# Create and observe a fresh computed resource for the current scope.
+	# Observe a supplied resource or create a fresh one for this scope.
 	# ----------------------------------------------------------------------
 	@contextmanager
-	def track_reads(self):
-		resource    = o.ComputedResource()
+	def track_reads(self, resource=None):
+		resource    = o.ComputedResource() if resource is None else resource
 		reads       = []
 		observation = None
 
