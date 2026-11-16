@@ -1,7 +1,7 @@
 # ==============================================================================
 # COMPUTED RESOURCE
 # ==============================================================================
-# Retain one identified result and its observed O dependency scope.
+# Retain a computed value and its observed O dependency scope.
 # ==============================================================================
 
 import threading
@@ -17,8 +17,7 @@ class ComputedResource(o.Resource):
 
 	# Start without a cached value or an inferred dependency scope.
 	# ----------------------------------------------------------------------
-	def __init__(self, identifier):
-		self.id                = identifier
+	def __init__(self):
 		self.dependencies      = frozenset()
 		self._value            = o.Undefined
 		self._candidate        = o.Undefined
