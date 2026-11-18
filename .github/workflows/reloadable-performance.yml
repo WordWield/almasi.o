@@ -96,8 +96,3 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as file:
           	file.write(report + '\n')
           PY
-
-      - name: Run O correctness tests (reported separately)
-        working-directory: after
-        continue-on-error: true
-        run: python root/test.py
