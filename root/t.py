@@ -12,7 +12,7 @@ import o
 UNDEFINED = o.Undefined
 
 
-class T(o.ReloadableModule, metaclass=o.TMeta):
+class T(o.TReloadable, metaclass=o.TMeta):
 	__is_atom__ = False
 	description = o.F(
 		str,
@@ -234,19 +234,6 @@ class T(o.ReloadableModule, metaclass=o.TMeta):
 		o.services.Cache.register(self)
 
 		return self
-
-	# The root type anchors every class, so only its descendants are observed
-	# ----------------------------------------------------------------------
-	@classmethod
-	def _observe_reload(cls, file):
-		if cls.__parent__ is not None:
-			super()._observe_reload(file)
-
-	# Reload the source and update the ontology registry atomically.
-	# ----------------------------------------------------------------------
-	@classmethod
-	def __reload__(cls):
-		return super().__reload__(o.services.Cache.replace)
 
 	# Write born subclass instance
 	# ----------------------------------------------------------------------

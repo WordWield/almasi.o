@@ -75,9 +75,6 @@ class TMeta(type(o.ReloadableModule)):
 			version     = zone.get('__version__', 0)
 			stored_hash = zone.get('__shape_hash__', UNDEFINED)
 
-		if has_own_module:
-			cls.__original_module__ = cls.__module__
-
 		cls.__module__         = 'o'
 		cls.__has_own_module__ = has_own_module
 		cls.__proto__          = proto
