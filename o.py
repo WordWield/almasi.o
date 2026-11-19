@@ -9,6 +9,11 @@ import a
 
 o = a.extend('o')
 
+# Publish ontology-specific reload behavior for the library and its forks.
+# ----------------------------------------------------------------------
+type(o).Reloadable       = o.read('reloadable.py')
+type(o).ReloadableModule = o.read('reloadable_module.py')
+
 o.DATA_DIR    = None
 o.MEMORY_SIZE = 1073741824
 o.TREE_MODE   = False
