@@ -36,7 +36,7 @@ class TMeta(type(o.Module)):
 
 		is_runtime_defined   = namespace.get('__is_runtime_defined__', False)
 		has_own_module       = False if is_runtime_defined else mcls.has_own_module(namespace)
-		is_root_t            = name == 'T' and len(bases) == 1 and bases[0] is o.Module
+		is_root_t            = name == 'T' and len(bases) == 1 and issubclass(bases[0], o.Module)
 		is_runtime_class_def = not is_runtime_defined and not has_own_module
 
 		# Prevent class definitions in runtime

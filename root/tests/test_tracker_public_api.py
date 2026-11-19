@@ -11,6 +11,18 @@ import o
 
 
 class TestTrackerPublicApi(o.Tester):
+	# Observe interceptor behavior without creating a computed resource.
+	# ----------------------------------------------------------------------
+	@classmethod
+	@contextmanager
+	def _track_reads(cls, reads, tracker=None):
+		tracker = o.services.Tracker if tracker is None else tracker
+		tracker._enter(reads)
+		try:
+			yield reads
+		finally:
+			tracker._exit(reads)
+
 	RUNTIME_PREFIX = 'o_tracker_public_'
 
 	# ======================================================================
@@ -59,7 +71,7 @@ class TestTrackerPublicApi(o.Tester):
 			employee = Employee(finance=finance)
 			reads    = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert employee.to_data() == {'finance': {'salary': 200}}
 				assert employee.to_json()
 				assert employee.serialize()
@@ -87,7 +99,7 @@ class TestTrackerPublicApi(o.Tester):
 			item  = Model()
 			reads = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert item.to_data() == {}
 
 			assert item.id in reads
@@ -104,7 +116,7 @@ class TestTrackerPublicApi(o.Tester):
 			Model  = o.T.extend('TrackerPublicInstances', value=int)
 			reads  = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert list(Model.__instances__()) == []
 
 			assert Model.id in reads
@@ -130,7 +142,7 @@ class TestTrackerPublicApi(o.Tester):
 			item   = Model(value=1)
 			reads  = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert item.id in [value.id for value in Model.__instances__()]
 
 			with cls._observe_writes() as received:
@@ -155,7 +167,7 @@ class TestTrackerPublicApi(o.Tester):
 			proto  = f'{Model.__proto__}._{Model.__version__}'
 			reads  = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert not o.services.Entity.exists(proto)
 
 			assert o.services.Id.hash(proto) in reads
@@ -180,7 +192,7 @@ class TestTrackerPublicApi(o.Tester):
 			Base   = o.T.extend('TrackerPublicBase')
 			reads  = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert Base.__subclasses__() == []
 
 			with cls._observe_writes() as received:
@@ -208,7 +220,7 @@ class TestTrackerPublicApi(o.Tester):
 		reads             = []
 		writes            = []
 
-		with tracker.track_reads(reads):
+		with cls._track_reads(reads):
 			assert o.T.__dict__['to_data'] is not original_data
 			assert o.Serializer.__dict__['_serialize_instance'] is not original_serialize
 			assert o.Tree.__dict__['_render_node'] is not original_tree

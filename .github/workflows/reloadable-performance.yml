@@ -1,0 +1,98 @@
+name: O ReloadableModule benchmark
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          path: after
+
+      - name: Checkout baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || 'master' }}
+          path: before
+
+      - name: Checkout Almasi
+        uses: actions/checkout@v4
+        with:
+          repository: apodgorny/almasi
+          ref: master
+          path: almasi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -e ./almasi -e ./after jsonschema
+
+      - name: Benchmark baseline and PR with declaration included
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import statistics
+          import subprocess
+          import sys
+
+          def measure(revision):
+          	root = os.path.join(os.environ['GITHUB_WORKSPACE'], revision)
+          	env  = dict(os.environ)
+          	env['PYTHONPATH'] = root + os.pathsep + env.get('PYTHONPATH', '')
+          	runner = os.path.join(root, 'root/tests/_test_performance.py')
+
+          	completed = subprocess.run(
+          		[sys.executable, runner, '--size', '1000', '--workload', 'expanded',
+          		 '--_mode', 'graph', '--_json'],
+          		cwd            = root,
+          		env            = env,
+          		capture_output = True,
+          		text           = True,
+          		check          = True,
+          	)
+          	return json.loads(completed.stdout)
+
+          samples = {'before': [], 'after': []}
+
+          for round_index in range(5):
+          	order = ['before', 'after'] if round_index % 2 == 0 else ['after', 'before']
+          	for revision in order:
+          		print(f'Round {round_index + 1}: {revision}', flush=True)
+          		samples[revision].append(measure(revision))
+
+          operations = list(samples['before'][0])
+          assert 'define' in operations, 'Declaration workload missing'
+          assert operations == list(samples['after'][0]), 'Benchmark cases differ'
+
+          rows = [
+          	'| Operation | Before (us/op) | After (us/op) | Delta |',
+          	'|---|---:|---:|---:|',
+          ]
+
+          for operation in operations:
+          	before = statistics.median([run[operation] for run in samples['before']])
+          	after  = statistics.median([run[operation] for run in samples['after']])
+          	delta  = (after / before - 1) * 100
+          	rows.append(f'| {operation} | {before:.3f} | {after:.3f} | {delta:+.1f}% |')
+
+          report = '\n'.join([
+          	'## O ReloadableModule performance',
+          	'Python 3.12; 5 alternating rounds, 1000 iterations, isolated LMDB per run.',
+          	'Lower is faster; medians in microseconds per operation.',
+          	*rows,
+          ])
+          print(report, flush=True)
+
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as file:
+          	file.write(report + '\n')
+          PY

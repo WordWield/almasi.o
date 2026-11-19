@@ -7,12 +7,24 @@
 
 import time
 
-from contextlib import nullcontext
+from contextlib import nullcontext, contextmanager
 
 import o
 
 
 class TestTrackerTransparency(o.Tester):
+	# Observe interceptor behavior without creating a computed resource.
+	# ----------------------------------------------------------------------
+	@classmethod
+	@contextmanager
+	def _track_reads(cls, reads, tracker=None):
+		tracker = o.services.Tracker if tracker is None else tracker
+		tracker._enter(reads)
+		try:
+			yield reads
+		finally:
+			tracker._exit(reads)
+
 	RUNTIME_PREFIX = 'o_tracker_transparency_'
 
 	# ======================================================================
@@ -26,7 +38,7 @@ class TestTrackerTransparency(o.Tester):
 		scope = nullcontext()
 
 		if mode == 'r':
-			scope = o.services.Tracker.track_reads(reads)
+			scope = cls._track_reads(reads)
 
 		return scope
 
