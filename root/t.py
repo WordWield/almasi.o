@@ -235,6 +235,13 @@ class T(o.ReloadableModule, metaclass=o.TMeta):
 
 		return self
 
+	# The root type anchors every class, so only its descendants are observed
+	# ----------------------------------------------------------------------
+	@classmethod
+	def _observe(cls, file):
+		if cls.__parent__ is not None:
+			super()._observe(file)
+
 	# Adopt the class that replaces this one after source reload
 	# ----------------------------------------------------------------------
 	@classmethod
