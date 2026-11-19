@@ -213,6 +213,69 @@ jobs:
           print('Regular reloadables and plain modules validated')
           PY
 
+      - name: Verify O fork reload uses only its own cache and rollback
+        working-directory: o
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          import tempfile
+          from types import SimpleNamespace
+          from unittest.mock import patch
+
+          sys.path.insert(0, 'root')
+          import a
+          import o
+
+          with tempfile.TemporaryDirectory(prefix='o_fork_reload_') as store:
+          	type(o).__app__ = SimpleNamespace(__lib_path__=store)
+          	o.start()
+          	branch = o.fork('isolated_reload')
+          	branch.start()
+
+          	assert branch.ReloadableModule is o.ReloadableModule
+          	assert branch.Reloadable is o.Reloadable
+          	assert branch.T.__bases__ == (o.ReloadableModule,)
+
+          	with tempfile.TemporaryDirectory(dir=o.__path__, prefix='__fork_reload_') as folder:
+          		file_path = os.path.join(folder, 'source.py')
+          		directory = a.Directory(branch, folder, 'o.' + os.path.basename(folder))
+
+          		with open(file_path, 'w', encoding='utf-8') as stream:
+          			stream.write('import o\nclass Source(o.T):\n\tvalue: int\n\tdef read(self):\n\t\treturn 1\n')
+
+          		with patch.object(type(branch.services.Filesystem), '_watch', return_value=None):
+          			Source = directory.Source
+          			assert Source.__lib__ is branch
+          			instance = Source(value=7)
+          			assert instance.read() == 1
+          			assert branch.services.Cache.entities[Source.id] is Source
+
+          			with open(file_path, 'w', encoding='utf-8') as stream:
+          				stream.write('import o\nclass Source(o.T):\n\tvalue: int\n\tdef read(self):\n\t\treturn 2\n')
+
+          			with patch.object(type(branch.services.Cache), 'replace', side_effect=RuntimeError('blocked')):
+          				try:
+          					Source.__reload__()
+          				except RuntimeError:
+          					pass
+          				else:
+          					raise AssertionError('Expected cache failure')
+
+          			assert type(instance) is Source
+          			assert instance.read() == 1
+          			assert branch.services.Cache.entities[Source.id] is Source
+
+          			Fresh = Source.__reload__()
+          			assert type(instance) is Fresh
+          			assert instance.read() == 2
+          			assert branch.services.Cache.entities[Source.id] is Fresh
+          			assert o.services.Cache.entities.get(Source.id) is not Fresh
+          			Source._reload_subscription.cancel()
+
+          print('Fork-local reload and rollback validated')
+          PY
+
       - name: Benchmark baseline Memory and Tracker (master)
         working-directory: o
         run: |
