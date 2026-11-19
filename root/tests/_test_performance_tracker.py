@@ -13,7 +13,6 @@ import subprocess
 import sys
 import tempfile
 
-from contextlib import nullcontext
 from types import SimpleNamespace
 
 import o
@@ -31,12 +30,13 @@ class TestPerformanceTracker(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def measure(cls, size, workload, mode, profile_case=None, profile_top=20):
-		scope = nullcontext()
+		reads   = []
+		tracker = o.services.Tracker
 
 		if mode == 'r':
-			scope = o.services.Tracker.track_reads()
+			tracker._enter(reads)
 
-		with scope:
+		try:
 			results = TestPerformance.test_performance(
 				size,
 				workload,
@@ -44,6 +44,9 @@ class TestPerformanceTracker(o.Tester):
 				profile_case = profile_case,
 				profile_top  = profile_top,
 			)
+		finally:
+			if mode == 'r':
+				tracker._exit(reads)
 
 		return results
 
