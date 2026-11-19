@@ -13,10 +13,24 @@ from concurrent.futures import ThreadPoolExecutor
 from types import DynamicClassAttribute, SimpleNamespace
 from unittest.mock import patch
 
+from contextlib import contextmanager
+
 import o
 
 
 class TestTracker(o.Tester):
+	# Observe interceptor behavior without creating a computed resource.
+	# ----------------------------------------------------------------------
+	@classmethod
+	@contextmanager
+	def _track_reads(cls, reads, tracker=None):
+		tracker = o.services.Tracker if tracker is None else tracker
+		tracker._enter(reads)
+		try:
+			yield reads
+		finally:
+			tracker._exit(reads)
+
 	RUNTIME_PREFIX = 'o_tracker_'
 
 	# ======================================================================
@@ -35,7 +49,7 @@ class TestTracker(o.Tester):
 			other = Model(value=22)
 			reads = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert first.value == 11
 				assert other.value == 22
 				assert first.value == 11
@@ -58,7 +72,7 @@ class TestTracker(o.Tester):
 			reads  = []
 			del item.__dict__['value']
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert item.value == 5
 				assert item.value == 5
 
@@ -78,7 +92,7 @@ class TestTracker(o.Tester):
 			item   = Child(other=9)
 			reads  = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert Base.value == 17
 				assert Child.value == 17
 				assert item.value == 17
@@ -97,7 +111,7 @@ class TestTracker(o.Tester):
 		try:
 			reads = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				Model = o.T.extend('TrackerNewClassInScope', value=int)
 				item  = Model(value=8)
 
@@ -120,7 +134,7 @@ class TestTracker(o.Tester):
 			items = o.List([1, 2])
 			reads = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert items[0] == 1
 				assert len(items) == 2
 				assert list(items) == [1, 2]
@@ -140,7 +154,7 @@ class TestTracker(o.Tester):
 			mapping = o.Dict({'a': 1})
 			reads   = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert mapping['a'] == 1
 				assert 'a' in mapping
 				assert len(mapping) == 1
@@ -162,7 +176,7 @@ class TestTracker(o.Tester):
 			mapping = o.Dict({'a': 1})
 			reads   = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert 'a' in mapping
 
 			assert reads == [mapping.id]
@@ -182,10 +196,10 @@ class TestTracker(o.Tester):
 			outer_reads  = []
 			inner_reads  = []
 			
-			with o.services.Tracker.track_reads(outer_reads):
+			with cls._track_reads(outer_reads):
 				first.value
 
-				with o.services.Tracker.track_reads(inner_reads):
+				with cls._track_reads(inner_reads):
 					other.value
 					other.value = 4
 
@@ -212,7 +226,7 @@ class TestTracker(o.Tester):
 			failed          = False
 
 			try:
-				with tracker.track_reads(reads):
+				with cls._track_reads(reads):
 					assert isinstance(Model.__dict__['value'], DynamicClassAttribute)
 					assert isinstance(o.List.__dict__['__items__'], DynamicClassAttribute)
 					item.value
@@ -235,13 +249,13 @@ class TestTracker(o.Tester):
 	def test_invalid_tracking_arguments(cls):
 		tracker = o.services.Tracker
 
-		for ids in (None, (), 'ids', {}):
+		for ids in ([], (), 'ids', {}):
 			failed = False
 
 			try:
 				with tracker.track_reads(ids):
 					assert False
-			except TypeError:
+			except (TypeError, AttributeError):
 				failed = True
 
 			assert failed
@@ -263,7 +277,7 @@ class TestTracker(o.Tester):
 			reads_b = []
 
 			def worker(item, reads):
-				with o.services.Tracker.track_reads(reads):
+				with cls._track_reads(reads):
 					barrier.wait(timeout=10)
 					item.value
 					item.value
@@ -293,7 +307,7 @@ class TestTracker(o.Tester):
 			reads_b = []
 
 			async def worker(item, reads):
-				with o.services.Tracker.track_reads(reads):
+				with cls._track_reads(reads):
 					item.value
 					await asyncio.sleep(0)
 					item.value
@@ -322,7 +336,7 @@ class TestTracker(o.Tester):
 			original_save   = o.List.__dict__['__save_items__']
 			reads           = []
 
-			with o.services.Tracker.track_reads(reads):
+			with cls._track_reads(reads):
 				assert isinstance(Model.__dict__['value'], DynamicClassAttribute)
 				assert isinstance(o.List.__dict__['__items__'], DynamicClassAttribute)
 				assert o.T.__dict__['__setattr__'] is original_assign
@@ -362,12 +376,12 @@ class TestTracker(o.Tester):
 					assert alice.T is not bob.T
 					assert alice.services.Tracker is not bob.services.Tracker
 
-					with alice.services.Tracker.track_reads(reads_a):
+					with cls._track_reads(reads_a, alice.services.Tracker):
 						assert second.value == 2
 						second.value = 3
 						assert reads_a == []
 
-						with bob.services.Tracker.track_reads(reads_b):
+						with cls._track_reads(reads_b, bob.services.Tracker):
 							assert first.value == 1
 							assert second.value == 3
 							first.value = 4

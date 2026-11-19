@@ -31,11 +31,10 @@ class TestPerformanceTracker(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def measure(cls, size, workload, mode, profile_case=None, profile_top=20):
-		reads = []
 		scope = nullcontext()
 
 		if mode == 'r':
-			scope = o.services.Tracker.track_reads(reads)
+			scope = o.services.Tracker.track_reads()
 
 		with scope:
 			results = TestPerformance.test_performance(
