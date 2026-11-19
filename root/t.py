@@ -242,11 +242,11 @@ class T(o.ReloadableModule, metaclass=o.TMeta):
 		if cls.__parent__ is not None:
 			super()._observe_reload(file)
 
-	# Adopt the class that replaces this one after source reload
+	# Reload the source and update the ontology registry atomically.
 	# ----------------------------------------------------------------------
 	@classmethod
-	def __swap__(cls, new):
-		o.services.Cache.replace(cls, new)
+	def __reload__(cls):
+		return super().__reload__(o.services.Cache.replace)
 
 	# Write born subclass instance
 	# ----------------------------------------------------------------------
