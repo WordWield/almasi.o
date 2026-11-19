@@ -13,5 +13,5 @@ import a
 import o
 
 
-class ReloadableModule(o.Reloadable, a.ReloadableModule):
+class ReloadableModule(a.ReloadableModule, o.Reloadable):
 	pass
