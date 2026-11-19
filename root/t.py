@@ -235,6 +235,12 @@ class T(o.ReloadableModule, metaclass=o.TMeta):
 
 		return self
 
+	# Adopt the class that replaces this one after source reload
+	# ----------------------------------------------------------------------
+	@classmethod
+	def __swap__(cls, new):
+		o.services.Cache.replace(cls, new)
+
 	# Write born subclass instance
 	# ----------------------------------------------------------------------
 	@classmethod

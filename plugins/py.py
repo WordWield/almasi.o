@@ -57,6 +57,10 @@ class Py(o.Plugin):
 					raise Exception(f'Class `{path}` does not extend from `Module`')
 				elif issubclass(cls, lib.Service):
 					cls = cls()
+
+				if isinstance(cls, lib.Reloadable) or (isinstance(cls, type) and issubclass(cls, lib.Reloadable)):
+					cls._observe(file)
+
 				return cls
 			
 			# - - - - - - - - - - - - - - - - - - - -
