@@ -28,6 +28,13 @@ jobs:
           ref: fix/auto-reload-metaclass-20261118
           path: almasi
 
+      - name: Checkout baseline Almasi
+        uses: actions/checkout@v4
+        with:
+          repository: apodgorny/almasi
+          ref: master
+          path: almasi_before
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -149,8 +156,8 @@ jobs:
         run: |
           git fetch origin master
           git restore --source=origin/master --worktree root/services root/t.py root/t_meta.py
-          python root/tests/_test_performance_write_tracking.py --size 1500 --rounds 3
-          python root/tests/_test_performance_tracker.py --size 1000 --rounds 3
+          PYTHONPATH="$GITHUB_WORKSPACE/almasi_before${PYTHONPATH:+:$PYTHONPATH}" python root/tests/_test_performance_write_tracking.py --size 1500 --rounds 3
+          PYTHONPATH="$GITHUB_WORKSPACE/almasi_before${PYTHONPATH:+:$PYTHONPATH}" python root/tests/_test_performance_tracker.py --size 1000 --rounds 3
           git restore --source=HEAD --worktree root/services root/t.py root/t_meta.py
 
       - name: Benchmark Memory without IPL and read-only Tracker (PR)
