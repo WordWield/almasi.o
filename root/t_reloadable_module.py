@@ -14,6 +14,14 @@ import a
 
 class TReloadableModule(a.ReloadableModule):
 
+	# Preserve the source before TMeta publishes ontology classes as 'o'.
+	# ----------------------------------------------------------------------
+	def __init_subclass__(cls, **kwargs):
+		super().__init_subclass__(**kwargs)
+
+		if cls.__dict__.get('__has_own_module__', False):
+			cls.__original_module__ = cls.__module__
+
 	# ==========================================================================
 	# FRAMEWORK METHODS
 	# ==========================================================================
