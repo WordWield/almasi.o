@@ -59,7 +59,7 @@ class Py(o.Plugin):
 					cls = cls()
 
 				if isinstance(cls, lib.Reloadable) or (isinstance(cls, type) and issubclass(cls, lib.Reloadable)):
-					cls._observe(file)
+					cls._observe_reload(file)
 
 				return cls
 			
