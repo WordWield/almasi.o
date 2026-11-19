@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: apodgorny/almasi
-          ref: master
+          ref: fix/auto-reload-metaclass-20261118
           path: almasi
 
       - name: Set up Python
