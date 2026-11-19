@@ -58,9 +58,6 @@ class Py(o.Plugin):
 				elif issubclass(cls, lib.Service):
 					cls = cls()
 
-				if isinstance(cls, lib.Reloadable) or (isinstance(cls, type) and issubclass(cls, lib.Reloadable)):
-					cls._observe_reload(file)
-
 				return cls
 			
 			# - - - - - - - - - - - - - - - - - - - -
