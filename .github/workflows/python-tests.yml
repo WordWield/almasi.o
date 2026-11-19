@@ -118,8 +118,8 @@ jobs:
           		directory = a.Directory(o, path, 'o.' + os.path.basename(path))
 
           		def source(version):
-          			return ('import o\\nclass Foo(o.T):\\n\\tname: str\\n'
-          			        '\\tdef hello(self):\\n\\t\\treturn ' + repr(version) + '\\n')
+          			return ('import o\nclass Foo(o.T):\n\tname: str\n'
+          			        '\tdef hello(self):\n\t\treturn ' + repr(version) + '\n')
 
           		with open(filename, 'w', encoding='utf-8') as stream:
           			stream.write(source('before'))
