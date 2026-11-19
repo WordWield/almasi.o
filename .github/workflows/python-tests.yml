@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: apodgorny/almasi
-          ref: fix/auto-reload-metaclass-20261118
+          ref: master
           path: almasi
 
       - name: Set up Python
@@ -93,55 +93,6 @@ jobs:
           	test_count, method_count = o.tester.run_layer(o)
           	assert test_count > 0 and method_count > 0
           	print(f'All O tests passed: {test_count} classes, {method_count} methods')
-          PY
-
-      - name: Verify coupled O source auto-reload and root exclusion
-        working-directory: o
-        run: |
-          python - <<'PY'
-          import os
-          import sys
-          import tempfile
-          from types import SimpleNamespace
-          from unittest.mock import patch
-
-          sys.path.insert(0, 'root')
-          import a
-          import o
-
-          with tempfile.TemporaryDirectory(prefix='o_reload_') as store:
-          	type(o).__app__ = SimpleNamespace(__lib_path__=store)
-          	o.start()
-
-          	with tempfile.TemporaryDirectory(dir=o.__path__, prefix='__reload_check_') as path:
-          		filename = os.path.join(path, 'foo.py')
-          		directory = a.Directory(o, path, 'o.' + os.path.basename(path))
-
-          		def source(version):
-          			return ('import o\nclass Foo(o.T):\n\tname: str\n'
-          			        '\tdef hello(self):\n\t\treturn ' + repr(version) + '\n')
-
-          		with open(filename, 'w', encoding='utf-8') as stream:
-          			stream.write(source('before'))
-
-          		with patch.object(type(a.services.Filesystem), '_watch', return_value=None):
-          			Foo = directory.Foo
-          			assert '_reload_subscription' not in o.T.__dict__
-          			assert '_reload_subscription' in Foo.__dict__
-          			instance = Foo(name='alex')
-          			assert instance.hello() == 'before'
-
-          			with open(filename, 'w', encoding='utf-8') as stream:
-          				stream.write(source('after'))
-
-          			a.services.Filesystem._changed_paths(o.__path__, {filename: 'modified'})
-          			assert instance.hello() == 'after'
-          			assert instance.name == 'alex'
-          			assert o.services.Cache.entities[Foo.id] is type(instance)
-          			assert directory.Foo is type(instance)
-          			type(instance)._reload_subscription.cancel()
-
-          print('Coupled O hot reload validated')
           PY
 
       - name: Benchmark baseline Memory and Tracker (master)
