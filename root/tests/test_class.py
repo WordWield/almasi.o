@@ -526,6 +526,7 @@ class TestClass(o.Tester):
 			)
 
 			with patch.object(type(o.services.Filesystem), '_watch', return_value=None):
+				assert o.T.__bases__ == (o.TReloadableModule,)
 				Original     = cls._source_class(state, class_name, source)
 				subscription = Original.__dict__.get('_reload_subscription')
 				assert subscription is not None

@@ -1,31 +1,31 @@
 # ==============================================================================
-# RELOADABLE
+# T RELOADABLE MODULE
 # ==============================================================================
 # PURPOSE:
-# Extend Almasi reload for ontology types while preserving ordinary modules.
+# Apply ontology-specific reload rules to source-backed type classes.
 #
 # RESPONSIBILITY BOUNDARIES:
-# Owns: Ontology source observation policy and cache replacement on reload.
-# Delegates: Source reload, subscriptions and rollback to Almasi.
+# Owns: Ontology source observation and cache replacement on reload.
+# Delegates: Module lifecycle, source reload and subscriptions to Almasi.
 # ==============================================================================
 
 import a
 
 
-class Reloadable(a.Reloadable, a.Module):
+class TReloadableModule(a.ReloadableModule):
 
 	# ==========================================================================
 	# FRAMEWORK METHODS
 	# ==========================================================================
 
-	# Observe ordinary modules and ontology descendants, not the root type.
+	# Observe source-backed types except for the ontology root.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def _observe_reload(cls, file):
 		if '__proto__' not in cls.__dict__ or cls.__parent__ is not None:
 			super()._observe_reload(file)
 
-	# Replace the ontology registry only for ontology classes.
+	# Keep the ontology cache consistent with the replacement type.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def __reload__(cls):

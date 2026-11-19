@@ -12,7 +12,7 @@ import o
 UNDEFINED = o.Undefined
 
 
-class T(o.ReloadableModule, metaclass=o.TMeta):
+class T(o.TReloadableModule, metaclass=o.TMeta):
 	__is_atom__ = False
 	description = o.F(
 		str,
