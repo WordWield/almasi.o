@@ -28,6 +28,13 @@ jobs:
           ref: master
           path: almasi
 
+      - name: Checkout Almasi compatible with O master baseline
+        uses: actions/checkout@v4
+        with:
+          repository: apodgorny/almasi
+          ref: 8d105e9b39d545c40484031d7bc6b1836d2d024d
+          path: almasi_before
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -100,9 +107,10 @@ jobs:
         run: |
           git fetch origin master
           git restore --source=origin/master --worktree root/services root/t.py root/t_meta.py
-          python root/tests/_test_performance_write_tracking.py --size 1500 --rounds 3
-          python root/tests/_test_performance_tracker.py --size 1000 --rounds 3
-          git restore --source=HEAD --worktree root/services root/t.py root/t_meta.py
+          rm -f root/t_reloadable_module.py
+          PYTHONPATH="$GITHUB_WORKSPACE/almasi_before${PYTHONPATH:+:$PYTHONPATH}" python root/tests/_test_performance_write_tracking.py --size 1500 --rounds 3
+          PYTHONPATH="$GITHUB_WORKSPACE/almasi_before${PYTHONPATH:+:$PYTHONPATH}" python root/tests/_test_performance_tracker.py --size 1000 --rounds 3
+          git restore --source=HEAD --worktree root/services root/t.py root/t_meta.py root/t_reloadable_module.py
 
       - name: Benchmark Memory without IPL and read-only Tracker (PR)
         working-directory: o
