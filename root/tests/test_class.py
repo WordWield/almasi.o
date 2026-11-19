@@ -11,6 +11,7 @@ import sys
 from contextlib import redirect_stdout
 from io         import StringIO
 from unittest   import TestCase
+from unittest.mock import patch
 
 import o
 
@@ -503,6 +504,53 @@ class TestClass(o.Tester):
 			assert SourceBackedClassPersistsOModule.__has_own_module__ == True
 			assert o.services.Route.get(SourceBackedClassPersistsOModule.__route__)['proto'] == SourceBackedClassPersistsOModule.__proto__
 		finally:
+			cls._restore_runtime(state)
+
+	# Update live ontology instances when the backing Python file changes.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_source_change_reloads_live_type(cls):
+		state        = cls._patch_runtime()
+		subscription = None
+
+		try:
+			class_name = 'SourceChangeReloadsLiveType'
+			file_name  = o.String.camel_to_snake(class_name) + '.py'
+			path       = os.path.join(state['source_root'], file_name)
+			source     = (
+				'import o\n'
+				f'class {class_name}(o.T):\n'
+				'\tname: str\n'
+				'\tdef read(self):\n'
+				'\t\treturn \'before\'\n'
+			)
+
+			with patch.object(type(o.services.Filesystem), '_watch', return_value=None):
+				assert o.T.__bases__ == (o.TReloadableModule,)
+				assert '__original_module__' not in o.TReloadableModule.__dict__
+				Original     = cls._source_class(state, class_name, source)
+				subscription = Original.__dict__.get('_reload_subscription')
+				assert subscription is not None
+				assert Original.__original_module__ == os.path.realpath(path)
+
+				instance = Original(name='alex')
+				assert instance.read() == 'before'
+
+				with open(path, 'w', encoding='utf-8') as stream:
+					stream.write(source.replace('before', 'after'))
+
+				o.services.Filesystem._changed_paths(o.__path__, {path: 'modified'})
+
+				Updated = type(instance)
+				assert Updated is not Original
+				assert instance.name == 'alex'
+				assert instance.read() == 'after'
+				assert o.services.Cache.entities[Original.id] is Updated
+				assert getattr(o.tests_runtime, class_name) is Updated
+				assert Updated._reload_subscription is subscription
+		finally:
+			if subscription is not None:
+				subscription.cancel()
 			cls._restore_runtime(state)
 
 	# ----------------------------------------------------------------------

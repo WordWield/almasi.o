@@ -79,3 +79,14 @@ class Cache(o.Service):
 
 			del self.entities[entity.id]
 			del self.entities[entity.__proto__]
+
+	# Replace a class with its successor, restoring the original on failure.
+	# ----------------------------------------------------------------------
+	def replace(self, old, new):
+		self.unregister(old)
+
+		try:
+			self.register(new)
+		except BaseException:
+			self.register(old)
+			raise

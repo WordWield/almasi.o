@@ -13,7 +13,7 @@ UNDEFINED  = o.Undefined
 ROOT_PROTO = 'o.T'
 
 
-class TMeta(type(o.Module)):
+class TMeta(type(o.TReloadableModule)):
 
 	# ======================================================================
 	# METACLASS METHODS

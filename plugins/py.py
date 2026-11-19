@@ -57,6 +57,7 @@ class Py(o.Plugin):
 					raise Exception(f'Class `{path}` does not extend from `Module`')
 				elif issubclass(cls, lib.Service):
 					cls = cls()
+
 				return cls
 			
 			# - - - - - - - - - - - - - - - - - - - -

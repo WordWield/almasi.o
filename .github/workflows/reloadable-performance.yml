@@ -27,6 +27,13 @@ jobs:
           ref: master
           path: almasi
 
+      - name: Checkout Almasi compatible with O master baseline
+        uses: actions/checkout@v4
+        with:
+          repository: apodgorny/almasi
+          ref: 8d105e9b39d545c40484031d7bc6b1836d2d024d
+          path: almasi_before
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -48,7 +55,9 @@ jobs:
           def measure(revision):
           	root = os.path.join(os.environ['GITHUB_WORKSPACE'], revision)
           	env  = dict(os.environ)
-          	env['PYTHONPATH'] = root + os.pathsep + env.get('PYTHONPATH', '')
+          	almasi_path = 'almasi_before' if revision == 'before' else 'almasi'
+          	almasi_root = os.path.join(os.environ['GITHUB_WORKSPACE'], almasi_path)
+          	env['PYTHONPATH'] = root + os.pathsep + almasi_root + os.pathsep + env.get('PYTHONPATH', '')
           	runner = os.path.join(root, 'root/tests/_test_performance.py')
 
           	completed = subprocess.run(
