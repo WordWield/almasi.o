@@ -60,7 +60,13 @@ class Ontology(o.Singleton):
 	# sync=False favors throughput; multiprocess=True enables IPC.
 	# An absolute path lets independent applications share one O database.
 	# ----------------------------------------------------------------------
-	def start(self, sync: bool = False, tree_mode: bool | None = None, multiprocess: bool = False, path: str | None = None):
+	def start(
+		self,
+		sync         : bool        = False,
+		tree_mode    : bool | None = None,
+		multiprocess : bool        = False,
+		path         : str | None  = None
+	):
 		app = o.__app__
 		if app is None:
 			raise RuntimeError('O requires an active Almasi application before start()')
