@@ -576,7 +576,7 @@ class TMeta(type(o.TReloadableModule)):
 		memory  = o.services.Memory
 		key     = cls.__zone__._key('__version__')
 		version = memory.get(key, 0)
-		memory.set(key, version + 1, cls.id)
+		cls.__zone__.set('__version__', version + 1)
 		cls.__version__ = version + 1
 		return version
 
