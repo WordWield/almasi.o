@@ -316,12 +316,33 @@ class Tracker(o.Singleton):
 					del self._task_scopes[task]
 					self._thread.async_count -= 1
 
+	# Capture local commits in scopes belonging to this thread and task.
+	# Preserve Sync's instance-method contract while the hook is active.
+	# ----------------------------------------------------------------------
+	def _publish_write_change(source, ids, local=True):
+		tracker = source.__lib__.services.Tracker
+
+		if local:
+			thread = threading.get_ident()
+			task   = tracker._current_task()
+
+			with tracker._lock:
+				for owner_thread, owner_task, collected in tuple(tracker._write_scopes.values()):
+					if thread == owner_thread and task is owner_task:
+						if ids is None:
+							collected.clear()
+							collected.add(None)
+						elif None not in collected:
+							collected.update(ids)
+
+		return tracker._write_original(source, ids, local=local)
+
 	# ======================================================================
 	# PUBLIC METHODS
 	# ======================================================================
 
-	# Capture only local committed owner IDs in the calling thread or task.
-	# Install one reversible hook for overlapping write scopes.
+	# Capture committed local owner IDs for this thread or async task.
+	# Nested scopes observe the same commits and restore Sync on exit.
 	# ----------------------------------------------------------------------
 	@contextmanager
 	def track_writes(self):
@@ -332,26 +353,8 @@ class Tracker(o.Singleton):
 			scopes = self.__dict__.setdefault('_write_scopes', {})
 
 			if not scopes:
-				original = type(sync).__dict__['publish_change']
-
-				def publish(source, ids, local=True):
-					if source is sync and local:
-						thread = threading.get_ident()
-						task   = self._current_task()
-
-						with self._lock:
-							for owner_thread, owner_task, collected in tuple(scopes.values()):
-								if thread == owner_thread and task is owner_task:
-									if ids is None:
-										collected.clear()
-										collected.add(None)
-									elif None not in collected:
-										collected.update(ids)
-
-					return original(source, ids, local=local)
-
-				type.__setattr__(type(sync), 'publish_change', publish)
-				self._write_original = original
+				self._write_original = type(sync).__dict__['publish_change']
+				type.__setattr__(type(sync), 'publish_change', type(self)._publish_write_change)
 
 			token = object()
 			scopes[token] = (threading.get_ident(), self._current_task(), writes)
