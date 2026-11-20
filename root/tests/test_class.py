@@ -525,32 +525,40 @@ class TestClass(o.Tester):
 				'\t\treturn \'before\'\n'
 			)
 
-			with patch.object(type(o.services.Filesystem), '_watch', return_value=None):
-				assert o.T.__bases__ == (o.TReloadableModule,)
-				assert '__original_module__' not in o.TReloadableModule.__dict__
-				Original     = cls._source_class(state, class_name, source)
-				subscription = Original.__dict__.get('_reload_subscription')
-				assert subscription is not None
-				assert Original.__original_module__ == os.path.realpath(path)
+			# Keep background filesystem deliveries out of this manual reload.
+			# The subscription must be canceled before the lock is released.
+			# --------------------------------------------------------------
+			filesystem = o.services.Filesystem
 
-				instance = Original(name='alex')
-				assert instance.read() == 'before'
+			with filesystem._subscription_lock:
+				try:
+					with patch.object(type(filesystem), '_watch', return_value=None):
+						assert o.T.__bases__ == (o.TReloadableModule,)
+						assert '__original_module__' not in o.TReloadableModule.__dict__
+						Original     = cls._source_class(state, class_name, source)
+						subscription = Original.__dict__.get('_reload_subscription')
+						assert subscription is not None
+						assert Original.__original_module__ == os.path.realpath(path)
 
-				with open(path, 'w', encoding='utf-8') as stream:
-					stream.write(source.replace('before', 'after'))
+						instance = Original(name='alex')
+						assert instance.read() == 'before'
 
-				o.services.Filesystem._changed_paths(o.__path__, {path: 'modified'})
+						with open(path, 'w', encoding='utf-8') as stream:
+							stream.write(source.replace('before', 'after'))
 
-				Updated = type(instance)
-				assert Updated is not Original
-				assert instance.name == 'alex'
-				assert instance.read() == 'after'
-				assert o.services.Cache.entities[Original.id] is Updated
-				assert getattr(o.tests_runtime, class_name) is Updated
-				assert Updated._reload_subscription is subscription
+						filesystem._changed_paths(o.__path__, {path: 'modified'})
+
+						Updated = type(instance)
+						assert Updated is not Original
+						assert instance.name == 'alex'
+						assert instance.read() == 'after'
+						assert o.services.Cache.entities[Original.id] is Updated
+						assert getattr(o.tests_runtime, class_name) is Updated
+						assert Updated._reload_subscription is subscription
+				finally:
+					if subscription is not None:
+						subscription.cancel()
 		finally:
-			if subscription is not None:
-				subscription.cancel()
 			cls._restore_runtime(state)
 
 	# ----------------------------------------------------------------------
