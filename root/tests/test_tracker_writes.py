@@ -149,7 +149,7 @@ class TestTrackerWrites(o.Tester):
 							with memory.write() as inner:
 								inner.set('tracker/writes/nested_abort_2', 2, 602)
 								raise ValueError('Abort')
-							except ValueError:
+						except ValueError:
 							pass
 				except RuntimeError:
 					failed = True
