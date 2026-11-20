@@ -569,12 +569,15 @@ class TMeta(type(o.TReloadableModule)):
 		else:
 			raise AttributeError(f'Field `{name}` is not defined on `{cls.__proto__}`')
 			
-	# Increment class version and return issued value
+	# Allocate the next instance version inside the caller's LMDB write.
+	# Do not trust the process-local class version across independent writers.
 	# ----------------------------------------------------------------------
 	def __inc_version__(cls):
-		version = cls.__version__
-		cls.__version__ += 1
-		cls.__zone__.set('__version__', cls.__version__)
+		memory  = o.services.Memory
+		key     = cls.__zone__._key('__version__')
+		version = memory.get(key, 0)
+		memory.set(key, version + 1, cls.id)
+		cls.__version__ = version + 1
 		return version
 
 	# ======================================================================
