@@ -10,6 +10,7 @@ import threading
 import weakref
 
 from contextlib import contextmanager
+from functools  import partial
 from types import DynamicClassAttribute
 
 import o
@@ -316,9 +317,39 @@ class Tracker(o.Singleton):
 					del self._task_scopes[task]
 					self._thread.async_count -= 1
 
+	# Record committed owners only in the scope's thread and async task.
+	# A full invalidation supersedes all previously collected identities.
+	# ----------------------------------------------------------------------
+	def _record_write_change(self, writes, thread, task, ids, local):
+		if local and thread == threading.get_ident() and task is self._current_task():
+			if ids is None:
+				writes.clear()
+				writes.add(None)
+			elif None not in writes:
+				writes.update(ids)
+
+	# Preserve read observations when Sync also reports commit origins.
+	# ----------------------------------------------------------------------
+	def _observe_read_change(self, resource, ids, local):
+		resource._observe_change(ids)
+
 	# ======================================================================
 	# PUBLIC METHODS
 	# ======================================================================
+
+	# Capture successful local commits in this thread or asynchronous task.
+	# Subscriptions follow the same lifetime as the observation scope.
+	# ----------------------------------------------------------------------
+	@contextmanager
+	def track_writes(self):
+		writes       = set()
+		callback     = partial(self._record_write_change, writes, threading.get_ident(), self._current_task())
+		observation  = self.__lib__.services.Sync.watch_commits(callback)
+
+		try:
+			yield writes
+		finally:
+			observation.cancel()
 
 	# Observe a supplied resource or create a fresh one for this scope.
 	# ----------------------------------------------------------------------
@@ -333,7 +364,7 @@ class Tracker(o.Singleton):
 		try:
 			# Observe new owners while the computation is in flight.
 			# --------------------------------------------------------------
-			observation = o.services.Sync.watch_commits(resource._observe_change)
+			observation = o.services.Sync.watch_commits(partial(self._observe_read_change, resource))
 
 			self._enter(reads)
 
