@@ -56,16 +56,22 @@ class Ontology(o.Singleton):
 
 		return result
 
-	# Open or create this ontology under the application-owned ontology folder.
+	# Open one explicit ontology path or the application's default directory.
 	# sync=False favors throughput; multiprocess=True enables IPC.
+	# An absolute path lets independent applications share one O database.
 	# ----------------------------------------------------------------------
-	def start(self, sync: bool = False, tree_mode: bool | None = None, multiprocess: bool = False):
+	def start(self, sync: bool = False, tree_mode: bool | None = None, multiprocess: bool = False, path: str | None = None):
 		app = o.__app__
 		if app is None:
 			raise RuntimeError('O requires an active Almasi application before start()')
 
-		name       = o.__dict__.get('__fork_name__', 'default')
-		o.DATA_DIR = os.path.join(app.__lib_path__, 'ontology', name)
+		if path is None:
+			name       = o.__dict__.get('__fork_name__', 'default')
+			o.DATA_DIR = os.path.join(app.__lib_path__, 'ontology', name)
+		elif isinstance(path, str) and path and os.path.isabs(os.path.expanduser(path)):
+			o.DATA_DIR = os.path.realpath(os.path.expanduser(path))
+		else:
+			raise ValueError('Ontology path must be an absolute directory path')
 
 		if tree_mode is not None and type(tree_mode) is not bool:
 			raise TypeError('tree_mode must be bool or None')
