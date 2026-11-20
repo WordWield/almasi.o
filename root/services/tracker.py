@@ -10,6 +10,7 @@ import threading
 import weakref
 
 from contextlib import contextmanager
+from functools  import partial
 from types import DynamicClassAttribute
 
 import o
@@ -316,58 +317,39 @@ class Tracker(o.Singleton):
 					del self._task_scopes[task]
 					self._thread.async_count -= 1
 
-	# Capture local commits in scopes belonging to this thread and task.
-	# Preserve Sync's instance-method contract while the hook is active.
+	# Record committed owners only in the scope's thread and async task.
+	# A full invalidation supersedes all previously collected identities.
 	# ----------------------------------------------------------------------
-	def _publish_write_change(source, ids, local=True):
-		tracker = source.__lib__.services.Tracker
+	def _record_write_change(self, writes, thread, task, ids, local):
+		if local and thread == threading.get_ident() and task is self._current_task():
+			if ids is None:
+				writes.clear()
+				writes.add(None)
+			elif None not in writes:
+				writes.update(ids)
 
-		if local:
-			thread = threading.get_ident()
-			task   = tracker._current_task()
-
-			with tracker._lock:
-				for owner_thread, owner_task, collected in tuple(tracker._write_scopes.values()):
-					if thread == owner_thread and task is owner_task:
-						if ids is None:
-							collected.clear()
-							collected.add(None)
-						elif None not in collected:
-							collected.update(ids)
-
-		return tracker._write_original(source, ids, local=local)
+	# Preserve read observations when Sync also reports commit origins.
+	# ----------------------------------------------------------------------
+	def _observe_read_change(self, resource, ids, local):
+		resource._observe_change(ids)
 
 	# ======================================================================
 	# PUBLIC METHODS
 	# ======================================================================
 
-	# Capture committed local owner IDs for this thread or async task.
-	# Nested scopes observe the same commits and restore Sync on exit.
+	# Capture successful local commits in this thread or asynchronous task.
+	# Subscriptions follow the same lifetime as the observation scope.
 	# ----------------------------------------------------------------------
 	@contextmanager
 	def track_writes(self):
-		writes = set()
-		sync   = self.__lib__.services.Sync
-
-		with self._lock:
-			scopes = self.__dict__.setdefault('_write_scopes', {})
-
-			if not scopes:
-				self._write_original = type(sync).__dict__['publish_change']
-				type.__setattr__(type(sync), 'publish_change', type(self)._publish_write_change)
-
-			token = object()
-			scopes[token] = (threading.get_ident(), self._current_task(), writes)
+		writes       = set()
+		callback     = partial(self._record_write_change, writes, threading.get_ident(), self._current_task())
+		observation  = self.__lib__.services.Sync.watch_commits(callback)
 
 		try:
 			yield writes
 		finally:
-			with self._lock:
-				del scopes[token]
-
-				if not scopes:
-					type.__setattr__(type(sync), 'publish_change', self._write_original)
-					del self._write_original
+			observation.cancel()
 
 	# Observe a supplied resource or create a fresh one for this scope.
 	# ----------------------------------------------------------------------
@@ -382,7 +364,7 @@ class Tracker(o.Singleton):
 		try:
 			# Observe new owners while the computation is in flight.
 			# --------------------------------------------------------------
-			observation = o.services.Sync.watch_commits(resource._observe_change)
+			observation = o.services.Sync.watch_commits(partial(self._observe_read_change, resource))
 
 			self._enter(reads)
 
