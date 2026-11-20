@@ -183,6 +183,31 @@ class TestTrackerWrites(o.Tester):
 		finally:
 			cls._restore_runtime(state)
 
+	# Commit observers receive both local and remote origin information.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_commit_observer_receives_origin(cls):
+		state = cls._patch_runtime()
+
+		try:
+			from unittest.mock import Mock, call
+
+			callback    = Mock()
+			sync        = o.services.Sync
+			observation = sync.watch_commits(callback)
+
+			try:
+				sync.publish_change([1601], local=False)
+				sync.publish_change([1602], local=True)
+				assert callback.call_args_list == [
+					call([1601], False),
+					call([1602], True),
+				]
+			finally:
+				observation.cancel()
+		finally:
+			cls._restore_runtime(state)
+
 	# The source flag distinguishes real local commits from remote invalidations.
 	# ----------------------------------------------------------------------
 	@classmethod
@@ -294,10 +319,10 @@ class TestTrackerWrites(o.Tester):
 		finally:
 			cls._restore_runtime(state)
 
-	# Exceptions close tracking scopes without removing committed observations.
+	# Exceptions close subscriptions without losing confirmed observations.
 	# ----------------------------------------------------------------------
 	@classmethod
-	def test_exception_restores_hook(cls):
+	def test_exception_closes_observation(cls):
 		state = cls._patch_runtime()
 
 		try:
@@ -309,7 +334,7 @@ class TestTrackerWrites(o.Tester):
 
 			try:
 				with tracker.track_writes() as writes:
-					assert type(sync).__dict__['publish_change'] is not original
+					assert type(sync).__dict__['publish_change'] is original
 					o.services.Memory.set('tracker/writes/before_error', 1, 1301)
 					raise ValueError('Expected')
 			except ValueError:
