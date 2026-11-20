@@ -1,7 +1,12 @@
 # ==============================================================================
 # ONTOLOGY SERVICE
 # ==============================================================================
-# Start persistence and load ontology classes after the library has been created.
+# PURPOSE:
+# Start persistent O databases at application-owned or explicit shared paths.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Ontology path selection and service startup.
+# Delegates: Storage to Memory and multiprocess notifications to Transport.
 # ==============================================================================
 
 import os
