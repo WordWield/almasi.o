@@ -320,6 +320,52 @@ class Tracker(o.Singleton):
 	# PUBLIC METHODS
 	# ======================================================================
 
+	# Capture only local committed owner IDs in the calling thread or task.
+	# Install one reversible hook for overlapping write scopes.
+	# ----------------------------------------------------------------------
+	@contextmanager
+	def track_writes(self):
+		writes = set()
+		sync   = self.__lib__.services.Sync
+
+		with self._lock:
+			scopes = self.__dict__.setdefault('_write_scopes', {})
+
+			if not scopes:
+				original = type(sync).__dict__['publish_change']
+
+				def publish(source, ids, local=True):
+					if source is sync and local:
+						thread = threading.get_ident()
+						task   = self._current_task()
+
+						with self._lock:
+							for owner_thread, owner_task, collected in tuple(scopes.values()):
+								if thread == owner_thread and task is owner_task:
+									if ids is None:
+										collected.clear()
+										collected.add(None)
+									elif None not in collected:
+										collected.update(ids)
+
+					return original(source, ids, local=local)
+
+				type.__setattr__(type(sync), 'publish_change', publish)
+				self._write_original = original
+
+			token = object()
+			scopes[token] = (threading.get_ident(), self._current_task(), writes)
+
+		try:
+			yield writes
+		finally:
+			with self._lock:
+				del scopes[token]
+
+				if not scopes:
+					type.__setattr__(type(sync), 'publish_change', self._write_original)
+					del self._write_original
+
 	# Observe a supplied resource or create a fresh one for this scope.
 	# ----------------------------------------------------------------------
 	@contextmanager
