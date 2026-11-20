@@ -8,7 +8,7 @@
 			"name": "Run Tests",
 			"type": "debugpy",
 			"request": "launch",
-			"program": "/Users/alexander/dev/o/core/test.py",
+			"program": "${workspaceFolder}/root/test.py",
 			"console": "integratedTerminal"
 		}
 	]
