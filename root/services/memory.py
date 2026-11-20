@@ -322,7 +322,7 @@ class Zone:
 			yield key[offset:]
 
 
-class Memory(o.Service):
+class Memory(o.Singleton):
 
 	# ======================================================================
 	# CLASS PUBLIC METHODS

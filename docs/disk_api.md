@@ -131,7 +131,7 @@ Entity rooms remain folder-based.
 
 | Signature | Returns / does |
 | --- | --- |
-| `class Registry(o.Service)` | Binary `id -> path` index for entity lookup. |
+| `class Registry(o.Singleton)` | Binary `id -> path` index for entity lookup. |
 | `Registry.initialize(self)` | Creates or opens fixed-size `__registry__` table. |
 | `Registry.add(self, id, dir_path)` | Persists one `id -> path` binding. |
 | `Registry.remove(self, id)` | Clears one binding. |
@@ -141,7 +141,7 @@ Entity rooms remain folder-based.
 
 | Signature | Returns / does |
 | --- | --- |
-| `class GC(o.Service)` | Binary persistent refcount table and release service. |
+| `class GC(o.Singleton)` | Binary persistent refcount table and release service. |
 | `GC.initialize(self)` | Creates or opens fixed-size `__refcounts__` table. |
 | `GC.get(self, id)` | Returns persistent refcount. |
 | `GC.set(self, id, count)` | Writes persistent refcount. |

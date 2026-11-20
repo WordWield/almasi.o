@@ -13,7 +13,7 @@ UNDEFINED = o.Undefined
 ATOMIC    = (int, float, str, bool, type(None))
 
 
-class Migration(o.Service):
+class Migration(o.Singleton):
 
 	# ======================================================================
 	# PRIVATE METHODS

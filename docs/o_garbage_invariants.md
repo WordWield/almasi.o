@@ -87,7 +87,7 @@ clear all Garbage
   - define structure
   - emit lifecycle events (link/unlink)
 
-- Garbage Service:
+- Garbage Singleton:
   - owns refcount
   - owns collectability
   - owns deletion

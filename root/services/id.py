@@ -9,7 +9,7 @@ import o
 UNDEFINED = o.Undefined
 
 
-class Id(o.Service):
+class Id(o.Singleton):
 
 	# ======================================================================
 	# PUBLIC METHODS

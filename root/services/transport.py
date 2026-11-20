@@ -16,7 +16,7 @@ import time
 import o
 
 
-class Transport(o.Service):
+class Transport(o.Singleton):
 
 	# ======================================================================
 	# PRIVATE METHODS

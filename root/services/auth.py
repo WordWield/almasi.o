@@ -7,7 +7,7 @@
 import o
 
 
-class Auth(o.Service):
+class Auth(o.Singleton):
 
 	# ======================================================================
 	# PUBLIC METHODS

@@ -7,7 +7,7 @@
 import o
 
 
-class Cache(o.Service):
+class Cache(o.Singleton):
 
 	# ======================================================================
 	# PUBLIC METHODS

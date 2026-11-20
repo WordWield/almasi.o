@@ -18,7 +18,7 @@ import o
 UNDEFINED = o.Undefined
 
 
-class Tracker(o.Service):
+class Tracker(o.Singleton):
 	_lock         = threading.RLock()
 	_thread       = threading.local()
 	_task_scopes  = weakref.WeakKeyDictionary()

@@ -9,7 +9,7 @@ import os
 import o
 
 
-class Ontology(o.Service):
+class Ontology(o.Singleton):
 
 	_multiprocess_enabled = False
 

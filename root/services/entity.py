@@ -9,7 +9,7 @@ import o
 UNDEFINED = o.Undefined
 
 
-class Entity(o.Service):
+class Entity(o.Singleton):
 
 	# ======================================================================
 	# PUBLIC METHODS

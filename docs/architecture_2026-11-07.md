@@ -6,7 +6,7 @@
 - `o.start(path=None, sync=False)` starts the ontology once: choose a storage path, initialize Cache → Memory → Id → Route → Garbage, load ontology classes, then ensure `o.V`. The default path is `ontology/` beside the caller's Python file; an explicit path takes precedence.
 - `Ontology` owns startup orchestration; `Memory` owns the LMDB environment and transaction boundaries. Other services should not independently decide the durability policy.
 
-| Responsibility | Service / type |
+| Responsibility | Singleton / type |
 | --- | --- |
 | Loaded entities and annotation → prototype mappings | `o.services.Cache` (`entities`, `cast_map`, `register`, `unregister`) |
 | Entity resolution, casting, primitive value extraction | `o.services.Entity` |

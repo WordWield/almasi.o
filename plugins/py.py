@@ -55,7 +55,7 @@ class Py(o.Plugin):
 				cls = lib.Imports.get_class(source_lib, class_name, path, route)
 				if not issubclass(cls, (lib.Module, lib.ModuleMeta)):
 					raise Exception(f'Class `{path}` does not extend from `Module`')
-				elif issubclass(cls, lib.Service):
+				elif issubclass(cls, lib.Singleton):
 					cls = cls()
 
 				return cls

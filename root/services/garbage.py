@@ -7,7 +7,7 @@
 import o
 
 
-class Garbage(o.Service):
+class Garbage(o.Singleton):
 
 	# Initialize service
 	# ----------------------------------------------------------------------

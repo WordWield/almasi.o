@@ -9,7 +9,7 @@ import o
 UNDEFINED = o.Undefined
 
 
-class Route(o.Service):
+class Route(o.Singleton):
 
 	# ======================================================================
 	# PUBLIC METHODS
