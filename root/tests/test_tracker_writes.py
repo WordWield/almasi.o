@@ -337,9 +337,9 @@ class TestTrackerWrites(o.Tester):
 			with tracker.track_reads() as resource:
 				with tracker.track_writes() as writes:
 					assert person.value == 1
-					person.value = 2
+					o.services.Memory.set('tracker/writes/read_coexist', 2, 1401)
 
-			assert person.id in writes
+			assert writes == {1401}
 			assert person.id in resource.dependencies
 		finally:
 			cls._restore_runtime(state)
