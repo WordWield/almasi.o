@@ -174,8 +174,8 @@ class Sync(o.Subscribable):
 
 		return subscription
 
-	# Observe successful commits before the asynchronous delivery queue.
-	# Reuse a broad Subscribable registration rather than another observer index.
+	# Observe commits with their origin before the asynchronous delivery queue.
+	# The callback receives (ids, local); reuse existing subscriptions.
 	# ----------------------------------------------------------------------
 	def watch_commits(self, callback):
 		with self._subscription_lock:
@@ -207,7 +207,7 @@ class Sync(o.Subscribable):
 		with self._subscription_lock:
 			for subscription in tuple(self._broad):
 				if getattr(subscription, '_commit_observer', False) and subscription._active:
-					subscription._callback(ids)
+					subscription._callback(ids, local)
 
 			if not local or self._subscriptions:
 				self._queue.put((ids, local))
