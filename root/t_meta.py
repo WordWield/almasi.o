@@ -7,6 +7,8 @@
 import hashlib
 import re
 
+import almasi
+
 from almasi import o
 UNDEFINED  = o.Undefined
 ROOT_PROTO = 'o.T'
