@@ -4,8 +4,7 @@
 # Resolve ontology field metadata and runtime access.
 # ==============================================================================
 
-import o
-
+from almasi import o
 UNDEFINED       = o.Undefined
 READ_ONLY_PROPS = ('type', 'annotation', 'is_optional')
 ATOMIC          = (int, bool, float, str, type(None))

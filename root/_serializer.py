@@ -4,8 +4,7 @@
 # Serialize ontology class and instance state.
 # ==============================================================================
 
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 
