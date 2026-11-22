@@ -24,100 +24,24 @@ jobs:
       - name: Checkout Almasi
         uses: actions/checkout@v4
         with:
-          repository: apodgorny/almasi
+          repository: WordWield/almasi
           ref: master
           path: almasi
-
-      - name: Checkout Almasi compatible with O master baseline
-        uses: actions/checkout@v4
-        with:
-          repository: apodgorny/almasi
-          ref: 8d105e9b39d545c40484031d7bc6b1836d2d024d
-          path: almasi_before
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install Almasi, O, and test dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install -e ./almasi
-          python -m pip install -e ./o
-          python -m pip install jsonschema
+          python -m pip install lmdb msgpack jsonschema rfc8785
 
-      - name: Run Sync correctness tests
-        working-directory: o
-        run: |
-          python - <<'PY'
-          import sys
-          import tempfile
-          from types import SimpleNamespace
+      - name: Expose the checked-out O library to Almasi
+        run: ln -s "$GITHUB_WORKSPACE/o" "$RUNNER_TEMP/almasi.o"
 
-          sys.path.insert(0, 'root')
-          import o
-
-          with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
-          	type(o).__app__ = SimpleNamespace(__lib_path__=directory)
-          	o.start()
-          	import tester
-          	o.tests.TestSync.run()
-          PY
-
-      - name: Run Tracker public API correctness tests
-        working-directory: o
-        run: |
-          python - <<'PY'
-          import sys
-          import tempfile
-          from types import SimpleNamespace
-
-          sys.path.insert(0, 'root')
-          import o
-
-          with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
-          	type(o).__app__ = SimpleNamespace(__lib_path__=directory)
-          	o.start()
-          	import tester
-          	o.tests.TestTrackerPublicApi.run()
-          PY
-
-      - name: Run O ontology tests
-        working-directory: o
-        run: |
-          python - <<'PY'
-          import sys
-          import tempfile
-          from types import SimpleNamespace
-
-          sys.path.insert(0, 'root')
-          import o
-
-          with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
-          	type(o).__app__ = SimpleNamespace(__lib_path__=directory)
-          	o.start()
-          	import tester
-          	test_count, method_count = o.tester.run_layer(o)
-          	assert test_count > 0 and method_count > 0
-          	print(f'All O tests passed: {test_count} classes, {method_count} methods')
-          PY
-
-      - name: Benchmark baseline Memory and Tracker (master)
-        working-directory: o
-        run: |
-          git fetch origin master
-          git restore --source=origin/master --worktree root/services root/t.py root/t_meta.py
-          rm -f root/t_reloadable_module.py
-          PYTHONPATH="$GITHUB_WORKSPACE/almasi_before${PYTHONPATH:+:$PYTHONPATH}" python root/tests/_test_performance_write_tracking.py --size 1500 --rounds 3
-          PYTHONPATH="$GITHUB_WORKSPACE/almasi_before${PYTHONPATH:+:$PYTHONPATH}" python root/tests/_test_performance_tracker.py --size 1000 --rounds 3
-          git restore --source=HEAD --worktree root/services root/t.py root/t_meta.py root/t_reloadable_module.py
-
-      - name: Benchmark Memory without IPL and read-only Tracker (PR)
-        working-directory: o
-        run: |
-          python root/tests/_test_performance_write_tracking.py --size 1500 --rounds 3
-          python root/tests/_test_performance_tracker.py --size 1000 --rounds 3
-
-      - name: Benchmark immediate per-ID notifications and commit confirmation (PR)
-        working-directory: o
-        run: python root/tests/_test_performance_write_tracking.py --size 1500 --rounds 3 --sync stub
+      - name: Run isolated O tests
+        env:
+          ALMASI_PATH: ${{ runner.temp }}
+        run: python o/root/test.py
