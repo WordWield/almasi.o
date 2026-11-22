@@ -385,7 +385,7 @@ class TestTracker(o.Tester):
 							first.value = 4
 							second.value = 5
 
-						assert [entity_id for entity_id in reads_a if entity_id == first.id] == [first.id]
+						assert [entity_id for entity_id in reads_a if entity_id == first.id] == [first.id], (reads_a, reads_b, first.id, second.id)
 						assert [entity_id for entity_id in reads_b if entity_id == second.id] == [second.id]
 				finally:
 					for world in (alice, bob):
