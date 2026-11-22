@@ -4,7 +4,7 @@
 # Turn ontology entities into public serialized representations.
 # ==============================================================================
 
-import o
+from almasi import o
 
 
 UNDEFINED = o.Undefined

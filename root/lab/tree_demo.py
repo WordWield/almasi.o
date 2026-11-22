@@ -1,4 +1,4 @@
-import o
+from almasi import o
 
 
 entry_proto = 'o.T.LabTreeEntry'

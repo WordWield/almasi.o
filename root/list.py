@@ -6,7 +6,7 @@
 
 from collections import Counter
 
-import o
+from almasi import o
 
 UNDEFINED = o.Undefined
 ENDIAN = 'little'
