@@ -8,8 +8,7 @@ import os
 
 from queue import Queue
 
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 
@@ -749,7 +748,7 @@ class TestInstance(o.Tester):
 					instance_names.add(name)
 
 			assert len(instance_names) == 3
-			assert {inst.id for inst in Owner.__instances__()} == {a.id, b.id, c.id}
+			assert {inst.id for inst in Owner.__instances__()} == {almasi.id, b.id, c.id}
 		finally:
 			cls._restore_runtime(state)
 

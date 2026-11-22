@@ -8,8 +8,7 @@ import os
 import shutil
 import tempfile
 
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 

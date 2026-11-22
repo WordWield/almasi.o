@@ -9,9 +9,7 @@ import time
 
 from unittest.mock import patch
 
-import o
-
-
+from almasi import o
 class TestServices(o.Tester):
 
 	# ======================================================================

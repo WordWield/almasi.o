@@ -4,9 +4,7 @@
 # Verify persistent list behavior and reconstruction.
 # ==============================================================================
 
-import o
-
-
+from almasi import o
 class TestList(o.Tester):
 	RUNTIME_PREFIX = 'o_list_'
 
