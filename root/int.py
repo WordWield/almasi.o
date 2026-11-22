@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class Int(o.Atom):
 	__annotation__ = int
 

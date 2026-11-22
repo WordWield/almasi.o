@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class Float(o.Atom):
 	__annotation__ = float
 

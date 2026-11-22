@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 entry_proto = 'o.T.LabTreeEntry'
 
 Entry = o.services.Entity.get(entry_proto) if o.services.Entity.exists(entry_proto) else o.T.extend(
