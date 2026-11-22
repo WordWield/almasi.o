@@ -1075,7 +1075,7 @@ class TestClass(o.Tester):
 
 			ids = {inst.id for inst in Owner.__instances__()}
 
-			assert ids == {almasi.id, b.id, c.id}
+			assert ids == {a.id, b.id, c.id}
 
 			for inst in Owner.__instances__():
 				assert inst.__class__ is Owner
