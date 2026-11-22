@@ -18,9 +18,7 @@ import time
 from queue import Queue
 from types import SimpleNamespace
 
-import o
-
-
+from almasi import o
 class TestPerformanceSync(o.Tester):
 
 	# ======================================================================

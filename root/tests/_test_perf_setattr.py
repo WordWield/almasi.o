@@ -1,9 +1,7 @@
 import time
 from tqdm import tqdm
 
-import o
-
-
+from almasi import o
 class TestPerformanceSetattr(o.Tester):
 
 	# Trigger object setattr

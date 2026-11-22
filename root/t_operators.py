@@ -1,8 +1,6 @@
 import operator
 
-import o
-
-
+from almasi import o
 UNARY_OPERATORS = {
 	'__pos__'       : operator.pos,
 	'__neg__'       : operator.neg,

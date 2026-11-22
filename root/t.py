@@ -7,8 +7,7 @@
 import os
 import json
 
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 

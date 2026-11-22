@@ -3,8 +3,7 @@ import shutil
 import tempfile
 
 import lmdb
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 Tester    = o.Tester
 

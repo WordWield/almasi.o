@@ -13,9 +13,7 @@ import time
 
 from types import SimpleNamespace
 
-import o
-
-
+from almasi import o
 ITERATIONS = 3000
 ROUNDS     = 5
 
