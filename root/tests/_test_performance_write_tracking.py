@@ -16,9 +16,7 @@ import time
 
 from types import SimpleNamespace
 
-import o
-
-
+from almasi import o
 class TestPerformanceWriteTracking(o.Tester):
 
 	# ======================================================================

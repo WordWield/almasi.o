@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class TestBuiltins(o.Tester):
 	RUNTIME_PREFIX = 'o_builtins_'
 

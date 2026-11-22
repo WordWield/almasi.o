@@ -13,8 +13,7 @@ from io         import StringIO
 from unittest   import TestCase
 from unittest.mock import patch
 
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 
@@ -1076,7 +1075,7 @@ class TestClass(o.Tester):
 
 			ids = {inst.id for inst in Owner.__instances__()}
 
-			assert ids == {a.id, b.id, c.id}
+			assert ids == {almasi.id, b.id, c.id}
 
 			for inst in Owner.__instances__():
 				assert inst.__class__ is Owner

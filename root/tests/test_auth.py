@@ -7,9 +7,7 @@
 import tempfile
 from types import SimpleNamespace
 
-import o
-
-
+from almasi import o
 class TestAuth(o.Tester):
 
 	# ======================================================================

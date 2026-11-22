@@ -13,9 +13,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import o
-
-
+from almasi import o
 class TestFork(o.Tester):
 
 	# ======================================================================
@@ -88,8 +86,7 @@ class TestFork(o.Tester):
 			source = '''
 import sys
 from types import SimpleNamespace
-import o
-
+from almasi import o
 type(o).__app__ = SimpleNamespace(__lib_path__=sys.argv[1])
 world = o.fork('persisted')
 world.start()
