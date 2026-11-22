@@ -13,9 +13,7 @@ import tempfile
 import threading
 import time
 
-import o
-
-
+from almasi import o
 class Transport(o.Singleton):
 
 	# ======================================================================

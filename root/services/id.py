@@ -4,8 +4,7 @@
 # Persist deterministic mappings between ontology identifiers and prototypes.
 # ==============================================================================
 
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 

@@ -11,9 +11,7 @@ import threading
 from queue import SimpleQueue
 from time  import sleep
 
-import o
-
-
+from almasi import o
 class Sync(o.Subscribable):
 
 	# ======================================================================

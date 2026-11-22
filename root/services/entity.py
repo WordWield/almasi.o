@@ -4,8 +4,7 @@
 # Resolve persistent entities and convert them to Python-facing values.
 # ==============================================================================
 
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 

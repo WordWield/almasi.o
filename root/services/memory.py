@@ -8,8 +8,7 @@ import os
 import lmdb
 import msgpack
 
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 

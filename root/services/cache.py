@@ -4,9 +4,7 @@
 # Track loaded entities and annotation mappings in one runtime-owned registry.
 # ==============================================================================
 
-import o
-
-
+from almasi import o
 class Cache(o.Singleton):
 
 	# ======================================================================

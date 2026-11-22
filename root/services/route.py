@@ -4,8 +4,7 @@
 # Persist source routes and resolve prototype source metadata.
 # ==============================================================================
 
-import o
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 
