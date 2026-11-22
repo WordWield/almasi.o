@@ -51,3 +51,23 @@ jobs:
         env:
           ALMASI_PATH: ${{ runner.temp }}
         run: python o/root/test.py
+
+  installed_mac:
+    runs-on: macos-latest
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Almasi from Git
+        run: python -m pip install 'git+https://github.com/WordWield/almasi.git'
+
+      - name: Load O through the lazy library installer
+        run: python -c 'from almasi import o; print(o.__path__)'
+
+      - name: Run cached O tests twice in fresh Python processes
+        run: |
+          python "$HOME/.cache/almasi/libraries/almasi.o/root/test.py"
+          python "$HOME/.cache/almasi/libraries/almasi.o/root/test.py"
