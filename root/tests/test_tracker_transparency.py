@@ -9,9 +9,7 @@ import time
 
 from contextlib import nullcontext, contextmanager
 
-import o
-
-
+from almasi import o
 class TestTrackerTransparency(o.Tester):
 	# Observe interceptor behavior without creating a computed resource.
 	# ----------------------------------------------------------------------

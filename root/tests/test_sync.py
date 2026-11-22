@@ -11,9 +11,7 @@ from queue              import Empty, Queue
 from types              import SimpleNamespace
 from unittest.mock      import patch
 
-import o
-
-
+from almasi import o
 class TestSync(o.Tester):
 
 	# ======================================================================

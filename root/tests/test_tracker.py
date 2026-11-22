@@ -15,9 +15,7 @@ from unittest.mock import patch
 
 from contextlib import contextmanager
 
-import o
-
-
+from almasi import o
 class TestTracker(o.Tester):
 	# Observe interceptor behavior without creating a computed resource.
 	# ----------------------------------------------------------------------

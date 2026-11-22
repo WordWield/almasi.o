@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class Tree(o.Module):
 
 	# Create tree projection

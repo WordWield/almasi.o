@@ -7,9 +7,7 @@
 from contextlib import contextmanager
 from queue      import Queue
 
-import o
-
-
+from almasi import o
 class TestTrackerPublicApi(o.Tester):
 	# Observe interceptor behavior without creating a computed resource.
 	# ----------------------------------------------------------------------

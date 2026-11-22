@@ -4,9 +4,7 @@
 # Expose the persistent ontology root and its authorization policy snapshot.
 # ==============================================================================
 
-import o
-
-
+from almasi import o
 class V(o.T):
 
 	# ======================================================================
