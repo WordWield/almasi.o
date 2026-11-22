@@ -31,7 +31,7 @@ class TestTreeMode(o.Tester):
 			b    = Node()
 			c    = Node()
 
-			almasi.child = b
+			a.child = b
 			b.child = c
 
 			try:
@@ -46,10 +46,10 @@ class TestTreeMode(o.Tester):
 			except ValueError as error:
 				assert 'parent' in str(error)
 
-			assert almasi.child is b
+			assert a.child is b
 			assert b.child is c
 
-			del almasi.child
+			del a.child
 			root = o.List([b])
 
 			assert root[0] is b
