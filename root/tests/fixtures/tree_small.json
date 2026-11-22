@@ -2,7 +2,7 @@
 	"classes": {
 		"o.T.SearchWorld": {
 			"description": {
-				"type": "o.Str",
+				"type": "o.T.Atom.Str",
 				"default": "Tiny search world."
 			},
 
@@ -19,7 +19,7 @@
 
 		"o.T.Branch": {
 			"description": {
-				"type": "o.Str"
+				"type": "o.T.Atom.Str"
 			},
 
 			"a": {
@@ -33,7 +33,7 @@
 
 		"o.T.Topic": {
 			"description": {
-				"type": "o.Str"
+				"type": "o.T.Atom.Str"
 			}
 		}
 	},
