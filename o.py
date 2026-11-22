@@ -4,10 +4,10 @@
 # Publish the ontology namespace without starting persistent storage on import.
 # ==============================================================================
 
-import a
+import almasi
 
 
-o = a.extend('o')
+o = almasi.extend('o')
 
 o.DATA_DIR    = None
 o.MEMORY_SIZE = 1073741824

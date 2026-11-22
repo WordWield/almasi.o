@@ -1,4 +1,4 @@
-import o
+from almasi import o
 
 UNDEFINED = o.Undefined
 

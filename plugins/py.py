@@ -1,6 +1,6 @@
 import os
 
-import o
+from almasi import o
 
 
 class Py(o.Plugin):

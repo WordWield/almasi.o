@@ -6,7 +6,7 @@
 
 import threading
 
-import o
+from almasi import o
 
 
 class ComputedResource(o.Resource):
