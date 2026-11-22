@@ -6,9 +6,7 @@
 
 import os
 
-import o
-
-
+from almasi import o
 class TestSerializer(o.Tester):
 	RUNTIME_PREFIX = 'o_serializer_'
 
@@ -181,7 +179,7 @@ class TestSerializer(o.Tester):
 			assert isinstance(tree, o.T)
 			assert tree.__class__.__proto__ == root_spec['__class__']
 			assert tree.description == root_spec['description']
-			assert tree.food.a.description == root_spec['food']['a']['description']
+			assert tree.food.almasi.description == root_spec['food']['a']['description']
 			assert tree.machines.b.description == root_spec['machines']['b']['description']
 		finally:
 			cls._restore_runtime(state)
@@ -197,7 +195,7 @@ class TestSerializer(o.Tester):
 			tree2 = o.T.deserialize(spec)
 
 			assert tree2.description == tree.description
-			assert tree2.food.a.description == tree.food.a.description
+			assert tree2.food.almasi.description == tree.food.almasi.description
 			assert tree2.machines.b.description == tree.machines.b.description
 		finally:
 			cls._restore_runtime(state)

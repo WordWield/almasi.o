@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class Bool(o.Atom):
 	__annotation__ = bool
 

@@ -20,9 +20,7 @@ from types import SimpleNamespace
 import tempfile
 import time
 
-import o
-
-
+from almasi import o
 DEFAULT_BASELINE = '6b2d40532081342575259b194a4d4509c5f3436b'
 
 

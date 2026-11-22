@@ -2,8 +2,7 @@ import math
 import types
 import typing as t
 
-import o
-
+from almasi import o
 def normalize(annotation):
 	origin = t.get_origin(annotation)
 	args   = t.get_args(annotation)

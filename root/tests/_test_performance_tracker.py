@@ -15,8 +15,7 @@ import tempfile
 
 from types import SimpleNamespace
 
-import o
-
+from almasi import o
 from _test_performance import TestPerformance
 
 

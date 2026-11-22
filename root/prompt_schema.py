@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class PromptSchema(o.JsonSchema):
 
 	# Omit fields intended for application state rather than LLM output.

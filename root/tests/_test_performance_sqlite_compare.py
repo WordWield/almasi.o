@@ -15,9 +15,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 
-import o
-
-
+from almasi import o
 KEYS = ('a', 'b', 'c', 'd', 'e')
 
 

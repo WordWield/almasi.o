@@ -14,9 +14,7 @@ import sys
 
 from types import SimpleNamespace
 
-import o
-
-
+from almasi import o
 class TestTransport(o.Tester):
 
 	# ======================================================================
@@ -69,8 +67,7 @@ import threading
 
 from types import SimpleNamespace
 
-import o
-
+from almasi import o
 with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 	type(o).__app__ = SimpleNamespace(__lib_path__=directory)
 	o.start()
@@ -209,8 +206,7 @@ import sys
 
 from types import SimpleNamespace
 
-import o
-
+from almasi import o
 type(o).__app__ = SimpleNamespace(__lib_path__=sys.argv[3])
 o.start(multiprocess=True)
 

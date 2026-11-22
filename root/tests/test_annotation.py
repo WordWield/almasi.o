@@ -8,9 +8,7 @@ import math
 import types
 import typing as t
 
-import o
-
-
+from almasi import o
 class TestAnnotation(o.Tester):
 
 	# ----------------------------------------------------------------------

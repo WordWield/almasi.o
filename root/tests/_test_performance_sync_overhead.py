@@ -17,9 +17,7 @@ import time
 
 from types import SimpleNamespace
 
-import o
-
-
+from almasi import o
 OWNER_ID = 1 << 60
 BLOCK_ID = OWNER_ID + 1
 DRAIN_ID = OWNER_ID + 2

@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class TestAtomic(o.Tester):
 	RUNTIME_PREFIX = 'o_atomic_'
 

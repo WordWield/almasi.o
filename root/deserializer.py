@@ -6,9 +6,7 @@
 
 import json, jsonschema
 
-import o
-
-
+from almasi import o
 UNDEFINED = o.Undefined
 SCHEMA    = o.json.SerializerSchema
 

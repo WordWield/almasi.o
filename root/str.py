@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class Str(o.Atom):
 	__annotation__ = str
 

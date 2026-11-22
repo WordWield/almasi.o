@@ -9,9 +9,7 @@ import weakref
 
 from unittest import TestCase
 
-import o
-
-
+from almasi import o
 class TestComputedResource(o.Tester):
 	RUNTIME_PREFIX = 'o_computed_resource_'
 

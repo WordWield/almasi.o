@@ -6,9 +6,7 @@
 
 import sys
 
-import o
-
-
+from almasi import o
 UNDEFINED = o.Undefined
 ATOMIC    = (int, float, str, bool, type(None))
 

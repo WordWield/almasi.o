@@ -6,9 +6,7 @@
 
 import os
 
-import o
-
-
+from almasi import o
 class TestDict(o.Tester):
 	RUNTIME_PREFIX = 'o_dict_'
 

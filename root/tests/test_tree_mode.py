@@ -9,9 +9,7 @@ import subprocess
 import sys
 import tempfile
 
-import o
-
-
+from almasi import o
 class TestTreeMode(o.Tester):
 	RUNTIME_PREFIX = 'o_tree_mode_'
 
@@ -33,7 +31,7 @@ class TestTreeMode(o.Tester):
 			b    = Node()
 			c    = Node()
 
-			a.child = b
+			almasi.child = b
 			b.child = c
 
 			try:
@@ -48,10 +46,10 @@ class TestTreeMode(o.Tester):
 			except ValueError as error:
 				assert 'parent' in str(error)
 
-			assert a.child is b
+			assert almasi.child is b
 			assert b.child is c
 
-			del a.child
+			del almasi.child
 			root = o.List([b])
 
 			assert root[0] is b
@@ -176,8 +174,7 @@ class TestTreeMode(o.Tester):
 			source = '''
 import sys
 from types import SimpleNamespace
-import o
-
+from almasi import o
 type(o).__app__ = SimpleNamespace(__lib_path__=sys.argv[1])
 mode = sys.argv[2]
 value = None if mode == 'load' else mode == 'tree'

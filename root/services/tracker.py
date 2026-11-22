@@ -13,9 +13,7 @@ from contextlib import contextmanager
 from functools  import partial
 from types import DynamicClassAttribute
 
-import o
-
-
+from almasi import o
 UNDEFINED = o.Undefined
 
 

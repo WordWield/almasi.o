@@ -1,8 +1,6 @@
 import os
 
-import o
-
-
+from almasi import o
 class TestJsonPrompt(o.Tester):
 	RUNTIME_PREFIX = 'o_json_prompt_'
 

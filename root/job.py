@@ -11,10 +11,9 @@ import time
 import warnings
 import weakref
 
-import a, o
-
-
-class Job(a.Logger):
+import almasi
+from almasi import o
+class Job(almasi.Logger):
 
 	_instances = weakref.WeakValueDictionary()
 
@@ -273,11 +272,11 @@ class Job(a.Logger):
 		with self.logging(self._checkpoint_directory(index, name)):
 			if name in self._node()['completed']:
 				logging.info('Checkpoint %s skipped', name)
-				a.Spinner.skipped(label)
+				almasi.Spinner.skipped(label)
 			else:
 				self._agents           = {}
 				self._progress_label   = label
-				self._progress_spinner = a.Spinner(
+				self._progress_spinner = almasi.Spinner(
 					text          = label,
 					done_label    = f'✔ {label} — complete',
 					failure_label = f'✘ {label} — failed',

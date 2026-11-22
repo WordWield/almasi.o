@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class Null(o.Atom):
 	__annotation__ = type(None)
 

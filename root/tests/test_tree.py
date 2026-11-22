@@ -1,6 +1,4 @@
-import o
-
-
+from almasi import o
 class TestTree(o.Tester):
 	RUNTIME_PREFIX = 'o_tree_'
 

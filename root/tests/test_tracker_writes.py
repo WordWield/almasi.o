@@ -13,9 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import o
-
-
+from almasi import o
 class TestTrackerWrites(o.Tester):
 
 	RUNTIME_PREFIX = 'o_tracker_writes_'

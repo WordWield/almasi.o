@@ -12,9 +12,7 @@ import tempfile
 
 from types import SimpleNamespace
 
-import o
-
-
+from almasi import o
 TIMEOUT = 15
 
 

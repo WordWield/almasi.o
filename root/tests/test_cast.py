@@ -6,9 +6,7 @@
 
 import os
 
-import o
-
-
+from almasi import o
 class TestCast(o.Tester):
 	RUNTIME_PREFIX = 'o_cast_'
 

@@ -9,10 +9,8 @@
 # Delegates: Module lifecycle, source reload and subscriptions to Almasi.
 # ==============================================================================
 
-import a
-
-
-class TReloadableModule(a.ReloadableModule):
+import almasi
+class TReloadableModule(almasi.ReloadableModule):
 
 	# Preserve the source before TMeta publishes ontology classes as 'o'.
 	# ----------------------------------------------------------------------

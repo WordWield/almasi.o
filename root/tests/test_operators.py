@@ -1,8 +1,6 @@
 import os
 
-import o
-
-
+from almasi import o
 class TestOperators(o.Tester):
 	RUNTIME_PREFIX = 'o_operators_'
 

@@ -7,9 +7,7 @@ import subprocess
 import sys
 import tempfile
 
-import o
-
-
+from almasi import o
 class TestJobRollback(o.Tester):
 
 	# ======================================================================
@@ -23,11 +21,10 @@ class TestJobRollback(o.Tester):
 		with tempfile.TemporaryDirectory() as path:
 			os.mkdir(os.path.join(path, 'root'))
 			with open(os.path.join(path, 'app.py'), 'w') as stream:
-				stream.write('import a\n\napp = a.extend(\'app\')\n')
+				stream.write('import almasi\n\napp = almasi.extend(\'app\')\n')
 			with open(os.path.join(path, 'root', 'trial.py'), 'w') as stream:
 				stream.write('''import os
-import o
-
+from almasi import o
 Actor = o.T.extend('RollbackActor', name=str)
 
 class Trial(o.Job):
@@ -59,8 +56,7 @@ import os
 import sys
 from types import SimpleNamespace
 
-import o
-
+from almasi import o
 type(o).__app__ = SimpleNamespace(__lib_path__=sys.argv[1])
 o.start()
 import app

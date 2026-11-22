@@ -4,9 +4,7 @@
 # Assign and check inherited access rights in persistent tree ontologies.
 # ==============================================================================
 
-import o
-
-
+from almasi import o
 class Auth(o.Singleton):
 
 	# ======================================================================

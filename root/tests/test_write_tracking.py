@@ -6,9 +6,7 @@
 
 from types import SimpleNamespace
 
-import o
-
-
+from almasi import o
 class TestWriteTracking(o.Tester):
 	RUNTIME_PREFIX = 'o_write_tracking_'
 

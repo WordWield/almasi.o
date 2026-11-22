@@ -11,9 +11,7 @@
 
 import os
 
-import o
-
-
+from almasi import o
 class Ontology(o.Singleton):
 
 	_multiprocess_enabled = False

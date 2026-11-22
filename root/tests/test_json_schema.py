@@ -1,9 +1,7 @@
 import os
 import runpy
 
-import o
-
-
+from almasi import o
 class TestJsonSchema(o.Tester):
 	RUNTIME_PREFIX = 'o_json_schema_'
 

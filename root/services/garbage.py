@@ -4,9 +4,7 @@
 # Track references and collect unreachable persistent entities.
 # ==============================================================================
 
-import o
-
-
+from almasi import o
 class Garbage(o.Singleton):
 
 	# Initialize service
