@@ -103,7 +103,7 @@ class TestClass(o.Tester):
 				state,
 				'OrdinaryClassNamespace',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class OrdinaryClassNamespace(o.T):\n'
 					'\tname: str\n'
 					'\t_hidden = 7\n\n'
@@ -145,7 +145,7 @@ class TestClass(o.Tester):
 				state,
 				'FieldDefinitionFromSource',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class FieldDefinitionFromSource(o.T):\n'
 					'\tname: str\n'
 					'\tage = o.F(int, default=7, description=\'Age\')\n'
@@ -177,7 +177,7 @@ class TestClass(o.Tester):
 				state,
 				'FieldPropsGetterAndSetter',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class FieldPropsGetterAndSetter(o.T):\n'
 					'\tage = o.F(int, default=7, description=\'Age\')\n'
 				)
@@ -459,7 +459,7 @@ class TestClass(o.Tester):
 				state,
 				'GetReconstructsClassOnCacheMiss',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class GetReconstructsClassOnCacheMiss(o.T):\n'
 					'\tage: int = 7\n\n'
 					'\tdef ping(self):\n'
@@ -494,7 +494,7 @@ class TestClass(o.Tester):
 				state,
 				'SourceBackedClassPersistsOModule',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class SourceBackedClassPersistsOModule(o.T):\n'
 					'\tpass\n'
 				)
@@ -517,7 +517,7 @@ class TestClass(o.Tester):
 			file_name  = o.String.camel_to_snake(class_name) + '.py'
 			path       = os.path.join(state['source_root'], file_name)
 			source     = (
-				'import o\n'
+				'from almasi import o\n'
 				f'class {class_name}(o.T):\n'
 				'\tname: str\n'
 				'\tdef read(self):\n'
@@ -589,7 +589,7 @@ class TestClass(o.Tester):
 				state,
 				class_name,
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					f'class {class_name}(o.T):\n'
 					'\tname: str\n'
 					'\titems: list\n'
@@ -763,7 +763,7 @@ class TestClass(o.Tester):
 				state,
 				'SourceParentRuntimeChild',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class SourceParentRuntimeChild(o.T):\n'
 					'\tpass\n'
 				)
@@ -790,7 +790,7 @@ class TestClass(o.Tester):
 				state,
 				'LoadedChild',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					f'class LoadedChild(o.T.{parent_name}):\n'
 					'\tpass\n'
 				)
@@ -876,7 +876,7 @@ class TestClass(o.Tester):
 				state,
 				'RawSourceChildParentIsPublicBase',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class RawSourceChildParentIsPublicBase(o.T):\n'
 					'\tpass\n'
 				)
@@ -885,7 +885,7 @@ class TestClass(o.Tester):
 				state,
 				'RawSourceGrandchildParentIsPublicBase',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class RawSourceGrandchildParentIsPublicBase(o.T.RawSourceChildParentIsPublicBase):\n'
 					'\tpass\n'
 				)
@@ -915,7 +915,7 @@ class TestClass(o.Tester):
 				state,
 				'PublicSourceParentIsPublicBase',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class PublicSourceParentIsPublicBase(o.T):\n'
 					'\tpass\n'
 				)
@@ -935,7 +935,7 @@ class TestClass(o.Tester):
 				state,
 				'PublicSourceChildParentIsPublicParent',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class PublicSourceChildParentIsPublicParent(o.T):\n'
 					'\tpass\n'
 				)
@@ -944,7 +944,7 @@ class TestClass(o.Tester):
 				state,
 				'PublicSourceGrandchildParentIsPublicParent',
 				(
-					'import o\n\n'
+					'from almasi import o\n\n'
 					'class PublicSourceGrandchildParentIsPublicParent(o.T.PublicSourceChildParentIsPublicParent):\n'
 					'\tpass\n'
 				)
