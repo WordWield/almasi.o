@@ -32,7 +32,7 @@ class Garbage(o.Singleton):
 		self.garbage.unset(instance.id, instance.id)
 
 		if old_count == 0:
-			for child in instance.__held_instances__():
+			for child in instance.__get_outgoing_references__():
 				self._on_instance_link(child)
 
 	# Release descendants only when the last rooted reference disappears.
@@ -46,7 +46,7 @@ class Garbage(o.Singleton):
 			self.garbage.set(instance.id, instance.__proto__, instance.id)
 
 			if old_count == 1:
-				for child in instance.__held_instances__():
+				for child in instance.__get_outgoing_references__():
 					self._on_instance_unlink(child)
 		else:
 			self.refcounts.set(instance.id, count, instance.id)
