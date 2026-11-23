@@ -226,7 +226,6 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 		object.__setattr__(self, '__version__', version_number )
 		object.__setattr__(self, '__proto__',   proto          )
 		object.__setattr__(self, '__zone__',    o.services.Memory.zone(f'{proto}.'))
-		object.__setattr__(self, '__refcount__', 0             )
 
 		o.services.Cache.register(self)
 
