@@ -2,87 +2,62 @@
 
 ## Purpose
 
-Instances in O are durable only while reachable from `o.V`. Local Python references
-do not retain persisted instances. Objects may remain on disk and addressable by ID
-during a session, even when they are collectable at the next startup.
+Persisted O instances survive restart exactly when reachable through holding
+edges from `o.V`. Local Python references do not retain persistent instances.
+Cycles do not constitute independent retention.
 
-`o.services.Garbage` owns collectability and reference propagation. Classes and
-containers report instance births and holding edges; they do not make GC decisions.
+Garbage owns collection and uses the existing identity registry. T and container
+classes own their stored holding edges. They perform no garbage bookkeeping
+when an edge changes or an instance is created.
 
-## Birth and collection
+## Startup
 
-Every newly persisted instance is registered in `garbage/items/` in the same
-LMDB transaction that creates its identity. The permanent `o.V` instance is
-the only exception.
+Ontology.start() opens Memory and Id, loads the ontology classes, and ensures
+that `o.V` exists. Only then does Garbage.initialize() invoke collect().
 
-```text
-new instance                 -> garbage[id] = proto
-reachable from o.V           -> remove from garbage
-last counted holding edge lost -> garbage[id] = proto
-next Garbage.initialize()    -> physically remove marked instance and its ID mapping
-```
+The collector runs under one LMDB write transaction:
 
-No full LMDB sweep is required. Instances reachable from o.V and their children are never
-scheduled for collection. Circular references do not constitute independent
-retention.
+1. Traverse holding edges from `o.V`, marking visited instance IDs.
+2. Read the existing `ids/` registry and identify persisted instance entries
+   by their instance-version suffix.
+3. Remove only unvisited instance records, their stored data, ID mappings, and
+   tree-mode parent relationships.
+4. Clear obsolete `garbage/refcounts/` and `garbage/items/` records from
+   earlier collector implementations.
+
+The transaction prevents concurrent writers from changing graph edges between
+marking and sweeping. Persisted class definitions and their ID mappings are
+not instances and therefore are not collected.
 
 ## Holding edges
 
-Persistent slots include object fields, list items, dictionary keys, and
-dictionary values. A slot contributes to GC liveness **only if its owner is
-already reachable from `o.V`**. An edge inside an unattached subtree has no
-retention effect yet.
+`T.__get_outgoing_references__()` enumerates persisted field references and
+list values. `Dict.__get_outgoing_references__()` also enumerates stored
+dictionary **keys**. The traversal visits each instance once, regardless of
+the number of incoming links or cycles.
 
-At the boundary of the retained graph:
+These operations remain independent of garbage collection:
 
-- Linking the first retained owner increments the child's refcount from 0 to 1
-  and recursively retains all its holding children.
-- Linking an additional retained owner increments only the child's refcount.
-- Unlinking one of multiple retained owners decrements only that refcount.
-- Unlinking the last retained owner decrements from 1 to 0, marks the child as
-  collectable, and recursively releases its holding children.
+- Object creation and regular field changes.
+- List and dictionary mutations.
+- Graph-mode link and unlink.
+- Tree-mode link validation and parent updates.
 
-In graph mode, an unlink first applies zero-boundary propagation. Remaining
-positive-count candidates are checked through trial deletion: their outgoing
-closure is considered, internal references are deducted provisionally, and
-only entries with externally retained paths survive. No persistent state or
-full-store sweep is introduced. The edge being removed is excluded because
-the caller has not yet updated the stored slot. Tree mode needs no cycle check.
+During an application session, disconnected objects remain accessible by ID.
+They are physically removed at the next startup.
 
-o.V is always reachable without a counted incoming edge.
-`on_instance_link(instance, owner)` and
-`on_instance_unlink(instance, owner)` apply these rules. Their optional owner
-defaults to `None` for explicit low-level calls without an enclosing object.
+## Complexity
 
-## Semantic dependants versus holding children
+- Hot-path garbage bookkeeping: **none**.
+- Restart traversal: O(V + E) for reachable instances and holding edges.
+- Registry sweep: O(N) for all persisted instance IDs.
+- Memory for the visited set and pending traversal: O(V + E) worst case.
 
-`__dependants__()` describes semantic child values, which other consumers
-(e.g., representation) rely on. `__get_outgoing_references__()` enumerates **all**
-GC edges and is used only for reference propagation.
+No persistent reachability index, reference counter or garbage queue is needed.
 
-For a normal instance and a list, both traversals have the same children.
-For a dictionary, holding children also include the persisted key entities,
-without adding them to the semantic `__dependants__()` output.
+## Verification
 
-## Storage and startup
-
-`refcounts` stores the number of incoming retained edges. Multiple direct
-slots retain the same object independently; subtrees receive propagation only
-when a node crosses the zero/nonzero boundary.
-
-Garbage is collected on `Garbage.initialize()`, after the LMDB store opens.
-Collection removes the instance record, its stored fields, its ID registry
-mapping, and any tree-mode parent mapping.
-
-This is deferred collection: it neither consults Python refcounts nor destroys
-objects while callers might still be using their IDs during the current session.
-Retention lookup is O(1); graph-mode cycle checks are O(V + E) within the
-candidate's outgoing closure.
-
-## Regression evidence
-
-`TestGarbage.test_unattached_tree_is_collected_after_restart` uses separate
-Python processes over one isolated LMDB, exercising graph and tree modes.
-It verifies that unattached and detached objects **and their descendants**
-are removed, while objects reachable from `o.V` remain. Dictionary keys and
-ID mappings are checked as well.
+`TestGarbage.test_unattached_tree_is_collected_after_restart` exercises
+creation, deletion, rooted and disconnected cycles, shared survivors, dictionary
+keys, and class-ID preservation over two separate processes against a real
+LMDB database in graph and tree modes.
