@@ -8,6 +8,10 @@ on:
 jobs:
   compare:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: ['graph', 'tree']
     steps:
       - name: Checkout PR
         uses: actions/checkout@v4
@@ -59,7 +63,7 @@ jobs:
 
           	completed = subprocess.run(
           		[sys.executable, runner, '--size', '1000', '--workload', 'expanded',
-          		 '--_mode', 'graph', '--_json'],
+          		 '--_mode', '${{ matrix.mode }}', '--_json'],
           		cwd            = root,
           		env            = env,
           		capture_output = True,
@@ -92,7 +96,7 @@ jobs:
           	rows.append(f'| {operation} | {before:.3f} | {after:.3f} | {delta:+.1f}% |')
 
           report = '\n'.join([
-          	'## O ReloadableModule performance',
+          	'## O performance: ${{ matrix.mode }} mode',
           	'Python 3.12; 5 alternating rounds, 1000 iterations, isolated LMDB per run.',
           	'Lower is faster; medians in microseconds per operation.',
           	*rows,
