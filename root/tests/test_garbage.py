@@ -106,6 +106,11 @@ if sys.argv[2] == 'create':
 		assert o.services.Memory.has(kept.__proto__)
 		assert not o.services.Memory.has(rogue.__proto__)
 		assert not o.services.Id.has(rogue.id)
+
+		# Reusing a collected instance must not create a dangling root edge.
+		# ----------------------------------------------------------------------
+		o.V.gc_relinked = rogue
+		assert o.services.Id.has(rogue.id), 'Collected instance linked with no persistent identity'
 else:
 	with open(os.path.join(sys.argv[1], 'objects.json'), encoding='utf-8') as file:
 		objects = json.load(file)
