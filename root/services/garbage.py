@@ -17,11 +17,28 @@ class Garbage(o.Singleton):
 
 		self.collect()
 
-	# Link holding edge
+	# Mark new instances collectable until retained through the root.
 	# ----------------------------------------------------------------------
-	def on_instance_link(self, instance):
-		with o.services.Memory.write():
-			self._on_instance_link(instance)
+	def on_instance_create(self, cls, id, proto):
+		if cls is not o.T.V:
+			self.garbage.set(id, proto, id)
+
+	# An edge retains its child only while its owner is retained.
+	# ----------------------------------------------------------------------
+	def _is_retained(self, owner):
+		result = (
+			owner is None
+			or isinstance(owner, o.T.V)
+			or self.refcounts.get(owner.id, 0) > 0
+		)
+		return result
+
+	# Link a holding edge whose owner is retained.
+	# ----------------------------------------------------------------------
+	def on_instance_link(self, instance, owner=None):
+		if self._is_retained(owner):
+			with o.services.Memory.write():
+				self._on_instance_link(instance)
 
 	# Link holding edge in active transaction
 	# ----------------------------------------------------------------------
@@ -36,11 +53,12 @@ class Garbage(o.Singleton):
 			for key, n_proto, child in instance.__dependants__():
 				self._on_instance_link(child)
 
-	# Unlink holding edge
+	# Unlink a holding edge whose owner was retained.
 	# ----------------------------------------------------------------------
-	def on_instance_unlink(self, instance):
-		with o.services.Memory.write():
-			self._on_instance_unlink(instance)
+	def on_instance_unlink(self, instance, owner=None):
+		if self._is_retained(owner):
+			with o.services.Memory.write():
+				self._on_instance_unlink(instance)
 
 	# Unlink holding edge in active transaction
 	# ----------------------------------------------------------------------
@@ -69,6 +87,7 @@ class Garbage(o.Singleton):
 				owner_id = (int(id), o.services.Id.hash(proto.rsplit('.', 1)[0]))
 				o.services.Memory.unset(proto, owner_id)
 				o.services.Memory.zone(f'{proto}.').clear()
+				o.services.Id.unset(int(id))
 
 			self.clear()
 
