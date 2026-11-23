@@ -189,13 +189,13 @@ class Dict(o.T):
 			child_path = f'{path}[{repr(key)}]'
 			yield key, child_path, o.services.Entity.get(value_id)
 
-	# Include dictionary keys as held instances without changing value traversal.
+	# Include dictionary keys among outgoing references.
 	# ----------------------------------------------------------------------
-	def __held_instances__(self):
+	def __get_outgoing_references__(self):
 		for key_id in self.__items__:
 			yield o.services.Entity.get(key_id)
 
-		yield from super().__held_instances__()
+		yield from super().__get_outgoing_references__()
 
 	# Cast to dict
 	# ----------------------------------------------------------------------
