@@ -457,6 +457,16 @@ if sys.argv[2] == 'create':
 		'removed_child' : removed_child,
 		'removed_key'   : removed_key,
 	}
+	if sys.argv[3] == 'graph':
+		cycle_a = o.List([])
+		cycle_b = o.List([])
+		cycle_a.append(cycle_b)
+		cycle_b.append(cycle_a)
+		o.V.gc_cycle = cycle_a
+		del o.V.gc_cycle
+		objects['cycle_a'] = cycle_a
+		objects['cycle_b'] = cycle_b
+
 	objects = {name: (item.id, item.__proto__) for name, item in objects.items()}
 
 	with open(os.path.join(sys.argv[1], 'objects.json'), 'w', encoding='utf-8') as file:
@@ -481,6 +491,9 @@ else:
 	assert not present['rogue'], 'ROGUE: unattached object survived restart'
 	assert not present['rogue_child'], 'ROGUE: unattached child survived restart'
 	assert not present['rogue_key'], 'ROGUE: unattached dictionary key survived restart'
+	if sys.argv[3] == 'graph':
+		assert not present['cycle_a'], 'CYCLE: detached cyclic graph survived restart'
+		assert not present['cycle_b'], 'CYCLE: detached cyclic graph child survived restart'
 
 o.services.Memory.env.close()
 '''
