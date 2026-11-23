@@ -148,6 +148,11 @@ with o.services.Memory.write():
 	o.V.tasks.append('release')
 ```
 
+Collection happens automatically when `o.start()` opens the ontology. It can
+also be invoked explicitly with `o.collect()`: this scans reachability from
+`o.V`, removes unreachable persisted instances, and returns the number deleted.
+It is intended for maintenance, not for each mutation.
+
 The `Memory` service is an infrastructure API for transaction management, **not** the recommended way for application services to read or mutate domain state. Application data should use the public O object API.
 
 Forked ontologies can have separate persistence and runtime identity:

@@ -1,7 +1,12 @@
 # ==============================================================================
 # T
 # ==============================================================================
-# Define the persistent root class and instance lifecycle.
+# PURPOSE:
+# Define persistent instances and their holding-edge notifications.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Object fields, identity and lifecycle notifications.
+# Delegates: Persistent instance collection to Garbage at startup.
 # ==============================================================================
 
 import os
@@ -167,7 +172,7 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 			object.__delattr__(self, name)
 
 
-	# Validate and register a holding edge before notifying garbage collection.
+	# Validate tree ownership when adding a holding edge.
 	# ----------------------------------------------------------------------
 	def __link__(self, child, check_only=False, pending=None):
 		if o.TREE_MODE:
@@ -194,12 +199,8 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 				else:
 					raise ValueError('Child already has a parent')
 
-				if not check_only:
-					o.services.Garbage.on_instance_link(child)
-		elif not check_only:
-			o.services.Garbage.on_instance_link(child)
-
-	# Remove a holding edge and its parent relationship.
+	
+	# Remove the parent relationship in tree mode.
 	# ----------------------------------------------------------------------
 	def __unlink__(self, child):
 		if o.TREE_MODE:
@@ -211,10 +212,7 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 				else:
 					raise ValueError('Parent mismatch')
 
-				o.services.Garbage.on_instance_unlink(child)
-		else:
-			o.services.Garbage.on_instance_unlink(child)
-
+	
 	# Read instance from memory based on class and version
 	# ----------------------------------------------------------------------
 	@classmethod
@@ -228,13 +226,12 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 		object.__setattr__(self, '__version__', version_number )
 		object.__setattr__(self, '__proto__',   proto          )
 		object.__setattr__(self, '__zone__',    o.services.Memory.zone(f'{proto}.'))
-		object.__setattr__(self, '__refcount__', 0             )
 
 		o.services.Cache.register(self)
 
 		return self
 
-	# Write born subclass instance
+	# Persist a new instance without runtime garbage bookkeeping.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def __write__(cls, kwargs):
@@ -243,7 +240,7 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 		with o.services.Memory.write() as memory:
 			version = cls.__inc_version__()
 			proto   = f'{cls.__proto__}._{version}'
-			id      = o.services.Id.set(proto)
+			o.services.Id.set(proto)
 
 			memory.set(proto, True, cls.id)
 
@@ -288,6 +285,12 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 				if '.' not in name and not name.startswith('_'):
 					child = o.services.Entity.get(child_id)
 					yield name, f'{path}.{name}', child
+
+	# Return instances referenced by stored fields and container entries.
+	# ----------------------------------------------------------------------
+	def __get_outgoing_references__(self):
+		for _, _, child in self.__dependants__():
+			yield child
 
 	# Cast Python-visible value into entity
 	# ----------------------------------------------------------------------

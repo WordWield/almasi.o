@@ -1,7 +1,12 @@
 # ==============================================================================
 # ROOT VALUE
 # ==============================================================================
-# Expose the persistent ontology root and its authorization policy snapshot.
+# PURPOSE:
+# Provide the persistent o.V entry point and its authorization snapshot.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Dynamic root fields and the tree authorization view.
+# Delegates: Persistence and collection to T and Garbage.
 # ==============================================================================
 
 from almasi import o
@@ -25,16 +30,6 @@ class V(o.T):
 	def __delattr__(self, name):
 		super().__delattr__(name)
 		delattr(self.__class__, name)
-
-	# Retain the root independently of ordinary garbage collection.
-	# ----------------------------------------------------------------------
-	@classmethod
-	def __read__(cls, version):
-		self = super().__read__(version)
-
-		object.__setattr__(self, '__refcount__', 1)
-
-		return self
 
 	# Expose a detached snapshot without creating tree ownership edges.
 	# ----------------------------------------------------------------------

@@ -1,418 +1,32 @@
 # ==============================================================================
 # TEST GARBAGE
 # ==============================================================================
-# Verify reference counting and collection of unreachable entities.
+# PURPOSE:
+# Verify persisted graphs are collected by rooted reachability at startup.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Restart-based garbage collection integration tests.
+# Delegates: Persistent state and traversal semantics to O.
 # ==============================================================================
 
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
 
 from almasi import o
-UNDEFINED = o.Undefined
-
-
-class GarbageInstance:
-
-	def __init__(self, id, proto, dependants=None):
-		self.id = id
-		self.__proto__ = proto
-		self.dependants = dependants or []
-
-	def __dependants__(self):
-		for dependant in self.dependants:
-			if isinstance(dependant, tuple):
-				yield dependant
-			else:
-				yield dependant.__proto__, dependant.__proto__, dependant
 
 
 class TestGarbage(o.Tester):
 
+	# ======================================================================
+	# PRIVATE METHODS
+	# ======================================================================
+
+	# Verify rooted, detached, and orphaned objects in separate processes.
 	# ----------------------------------------------------------------------
 	@classmethod
-	def _patch_memory(cls):
-		temp_root = os.path.join(o.__path__, '__tmp__')
-		root      = None
-		state     = {
-			'root'         : root,
-			'old_data_dir' : o.DATA_DIR,
-			'old_size_key' : o.MEMORY_SIZE,
-		}
-
-		os.makedirs(temp_root, exist_ok=True)
-		root = tempfile.mkdtemp(prefix='o_garbage_', dir=temp_root)
-
-		state['root'] = root
-
-		o.DATA_DIR    = os.path.join('__tmp__', os.path.basename(root))
-		o.MEMORY_SIZE = 10485760
-		cls._switch_store(o.DATA_DIR)
-		state['memory']  = o.services.Memory
-		state['garbage'] = o.services.Garbage
-
-		return state
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def _restore_memory(cls, state):
-		o.DATA_DIR = state['old_data_dir']
-		o.MEMORY_SIZE = state['old_size_key']
-		cls._switch_store(o.DATA_DIR)
-
-		if os.path.isdir(state['root']):
-			shutil.rmtree(state['root'])
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def _patch_runtime(cls):
-		temp_root = os.path.join(o.__path__, '__tmp__')
-		root      = None
-
-		os.makedirs(temp_root, exist_ok=True)
-		root = tempfile.mkdtemp(prefix='o_garbage_', dir=temp_root)
-
-		state = {
-			'root'         : root,
-			'data_dir'     : o.DATA_DIR,
-			'entities'     : dict(o.services.Cache.entities),
-			'cast_map'     : dict(o.services.Cache.cast_map),
-			'value'        : o.__dict__.get('V', UNDEFINED),
-			'old_size_key' : o.MEMORY_SIZE,
-		}
-
-		o.DATA_DIR = os.path.join('__tmp__', os.path.basename(root))
-		cls._switch_store(o.DATA_DIR)
-		state['memory']  = o.services.Memory
-		state['garbage'] = o.services.Garbage
-
-		if 'V' in o.__dict__:
-			del o.__dict__['V']
-
-		return state
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def _restore_runtime(cls, state):
-		o.DATA_DIR = state['data_dir']
-		o.MEMORY_SIZE = state['old_size_key']
-
-		o.services.Cache.entities.clear()
-		o.services.Cache.entities.update(state['entities'])
-
-		o.services.Cache.cast_map.clear()
-		o.services.Cache.cast_map.update(state['cast_map'])
-
-		if state['value'] is UNDEFINED:
-			if 'V' in o.__dict__:
-				del o.__dict__['V']
-		else:
-			o.__dict__['V'] = state['value']
-
-		cls._switch_store(o.DATA_DIR)
-
-		if os.path.isdir(state['root']):
-			shutil.rmtree(state['root'])
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def _instance(cls, id, proto, dependants=None):
-		return GarbageInstance(id, proto, dependants)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_link_sets_refcount_and_removes_garbage(cls):
-		state = cls._patch_memory()
-
-		try:
-			garbage = state['garbage']
-			instance = cls._instance(10, 'o.T.Node._0')
-
-			garbage.garbage.set(instance.id, instance.__proto__)
-			garbage.on_instance_link(instance)
-
-			assert garbage.refcounts.get(instance.id, 0) == 1
-			assert garbage.garbage.has(instance.id) == False
-		finally:
-			cls._restore_memory(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_duplicate_links_do_not_duplicate_dependant_liveness(cls):
-		state = cls._patch_memory()
-
-		try:
-			garbage = state['garbage']
-			child   = cls._instance(11, 'o.T.Child._0')
-			parent  = cls._instance(12, 'o.T.Parent._0', [child])
-
-			garbage.on_instance_link(parent)
-			garbage.on_instance_link(parent)
-
-			assert garbage.refcounts.get(parent.id, 0) == 2
-			assert garbage.refcounts.get(child.id, 0) == 1
-		finally:
-			cls._restore_memory(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_unlink_two_to_one_keeps_dependants_alive(cls):
-		state = cls._patch_memory()
-
-		try:
-			garbage = state['garbage']
-			child   = cls._instance(13, 'o.T.Child._1')
-			parent  = cls._instance(14, 'o.T.Parent._1', [child])
-
-			garbage.on_instance_link(parent)
-			garbage.on_instance_link(parent)
-			garbage.on_instance_unlink(parent)
-
-			assert garbage.refcounts.get(parent.id, 0) == 1
-			assert garbage.refcounts.get(child.id, 0) == 1
-			assert garbage.garbage.has(parent.id) == False
-			assert garbage.garbage.has(child.id) == False
-		finally:
-			cls._restore_memory(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_unlink_one_to_zero_marks_garbage_and_unlinks_dependants(cls):
-		state = cls._patch_memory()
-
-		try:
-			garbage = state['garbage']
-			child   = cls._instance(15, 'o.T.Child._2')
-			parent  = cls._instance(16, 'o.T.Parent._2', [child])
-
-			garbage.on_instance_link(parent)
-			garbage.on_instance_unlink(parent)
-
-			assert garbage.refcounts.get(parent.id, 0) == 0
-			assert garbage.refcounts.get(child.id, 0) == 0
-			assert garbage.garbage.get(parent.id) == parent.__proto__
-			assert garbage.garbage.get(child.id) == child.__proto__
-		finally:
-			cls._restore_memory(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_unlink_at_zero_does_not_go_negative(cls):
-		state = cls._patch_memory()
-
-		try:
-			garbage = state['garbage']
-			instance = cls._instance(17, 'o.T.Node._1')
-
-			garbage.on_instance_unlink(instance)
-
-			assert garbage.refcounts.get(instance.id, 0) == 0
-			assert garbage.garbage.get(instance.id) == instance.__proto__
-		finally:
-			cls._restore_memory(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_nested_liveness_propagates_only_on_boundary(cls):
-		state = cls._patch_memory()
-
-		try:
-			garbage = state['garbage']
-			leaf    = cls._instance(18, 'o.T.Leaf._0')
-			child   = cls._instance(19, 'o.T.Child._3', [leaf])
-			parent  = cls._instance(20, 'o.T.Parent._3', [child])
-
-			garbage.on_instance_link(parent)
-			garbage.on_instance_link(child)
-			garbage.on_instance_unlink(parent)
-
-			assert garbage.refcounts.get(parent.id, 0) == 0
-			assert garbage.refcounts.get(child.id, 0) == 1
-			assert garbage.refcounts.get(leaf.id, 0) == 1
-			assert garbage.garbage.get(parent.id) == parent.__proto__
-			assert garbage.garbage.has(child.id) == False
-			assert garbage.garbage.has(leaf.id) == False
-		finally:
-			cls._restore_memory(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_root_value_allows_ad_hoc_regular_attrs(cls):
-		state = cls._patch_runtime()
-
-		try:
-			value = o.services.Entity.ensure_value()
-			value.foo = 1
-
-			assert value.foo == 1
-			assert value.__class__._.foo.type is o.Int
-			assert o.services.Memory.has(f'{value.__proto__}.foo') == True
-
-			del value.foo
-
-			assert o.services.Memory.has(f'{value.__proto__}.foo') == False
-			assert value.__class__.__has_field__('foo') == False
-		finally:
-			cls._restore_runtime(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_attr_mutation_updates_garbage_refcounts(cls):
-		state = cls._patch_runtime()
-
-		try:
-			garbage   = state['garbage']
-			root_name = os.path.basename(state['root'])
-			Node      = o.T.extend(f'GarbageAttrNode_{root_name}')
-			Owner     = o.T.extend(f'GarbageAttrOwner_{root_name}', child=o.F(Node, default=None))
-			Root      = o.T.extend(f'GarbageAttrRoot_{root_name}', owner=Owner)
-			owner     = Owner()
-			child     = Node()
-			root      = Root(owner=owner)
-			garbage.on_instance_link(root)
-
-			assert garbage.refcounts.get(owner.id, 0) > 0
-
-			owner.child = child
-
-			assert garbage.refcounts.get(child.id, 0) > 0
-			assert garbage.garbage.has(child.id) == False
-
-			del owner.child
-
-			assert garbage.refcounts.get(child.id, 0) == 0
-			assert garbage.garbage.get(child.id) == child.__proto__
-		finally:
-			cls._restore_runtime(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_list_mutation_updates_garbage_refcounts(cls):
-		state = cls._patch_runtime()
-
-		try:
-			garbage   = state['garbage']
-			root_name = os.path.basename(state['root'])
-			Node      = o.T.extend(f'GarbageListNode_{root_name}')
-			Root      = o.T.extend(f'GarbageListRoot_{root_name}', items=o.List)
-			items     = o.List([])
-			old       = Node()
-			new       = Node()
-			root      = Root(items=items)
-			garbage.on_instance_link(root)
-
-			items.append(old)
-
-			assert garbage.refcounts.get(items.id, 0) > 0
-			assert garbage.refcounts.get(old.id, 0) > 0
-
-			items[0] = new
-
-			assert garbage.refcounts.get(old.id, 0) == 0
-			assert garbage.garbage.get(old.id) == old.__proto__
-			assert garbage.refcounts.get(new.id, 0) > 0
-
-			del items[0]
-
-			assert garbage.refcounts.get(new.id, 0) == 0
-			assert garbage.garbage.get(new.id) == new.__proto__
-		finally:
-			cls._restore_runtime(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_dict_mutation_updates_garbage_refcounts(cls):
-		state = cls._patch_runtime()
-
-		try:
-			garbage   = state['garbage']
-			root_name = os.path.basename(state['root'])
-			Node      = o.T.extend(f'GarbageDictNode_{root_name}')
-			Root      = o.T.extend(f'GarbageDictRoot_{root_name}', items=o.Dict)
-			items     = o.Dict({})
-			old       = Node()
-			new       = Node()
-			root      = Root(items=items)
-			garbage.on_instance_link(root)
-
-			items['a'] = old
-
-			assert garbage.refcounts.get(items.id, 0) > 0
-			assert garbage.refcounts.get(old.id, 0) > 0
-
-			items['a'] = new
-
-			assert garbage.refcounts.get(old.id, 0) == 0
-			assert garbage.garbage.get(old.id) == old.__proto__
-			assert garbage.refcounts.get(new.id, 0) > 0
-
-			del items['a']
-
-			assert garbage.refcounts.get(new.id, 0) == 0
-			assert garbage.garbage.get(new.id) == new.__proto__
-		finally:
-			cls._restore_runtime(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_collect_removes_garbage_rooms_and_clears_garbage(cls):
-		state = cls._patch_memory()
-
-		try:
-			memory = state['memory']
-			garbage = state['garbage']
-			proto = 'o.T.Node._2'
-			other_proto = 'o.T.Node._20'
-			id = 26
-
-			memory.set(proto, True, 0)
-			memory.set(f'{proto}.name', 7, 0)
-			memory.set(other_proto, True, 0)
-			memory.set(f'{other_proto}.name', 20, 0)
-			memory.set('o.T.Other._0', True, 0)
-			garbage.garbage.set(id, proto)
-
-			garbage.collect()
-
-			assert memory.has(proto) == False
-			assert memory.has(f'{proto}.name') == False
-			assert memory.has(other_proto) == True
-			assert memory.has(f'{other_proto}.name') == True
-			assert memory.has('o.T.Other._0') == True
-			assert garbage.garbage.has(id) == False
-		finally:
-			cls._restore_memory(state)
-
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_collect_removes_existing_garbage(cls):
-		state = cls._patch_memory()
-
-		try:
-			memory = state['memory']
-			garbage = state['garbage']
-			proto = 'o.T.Node._3'
-			id = 27
-
-			memory.set(proto, True, 0)
-			memory.set(f'{proto}.name', 7, 0)
-			garbage.garbage.set(id, proto)
-
-			garbage.collect()
-
-			assert memory.has(proto) == False
-			assert memory.has(f'{proto}.name') == False
-			assert garbage.garbage.has(id) == False
-		finally:
-			cls._restore_memory(state)
-
-
-	# Verify unretained objects disappear after a fresh process opens LMDB.
-	# ----------------------------------------------------------------------
-	@classmethod
-	def test_unattached_tree_is_collected_after_restart(cls):
+	def _check_root_reachability_after_restart(cls, tree_mode, collect_on_demand=False):
 		with tempfile.TemporaryDirectory(prefix='o_garbage_restart_') as directory:
 			source = '''
 import json
@@ -423,7 +37,7 @@ from types import SimpleNamespace
 from almasi import o
 
 type(o).__app__ = SimpleNamespace(__lib_path__=sys.argv[1])
-o.start(path=os.path.join(sys.argv[1], 'ontology'))
+o.start(path=os.path.join(sys.argv[1], 'ontology'), tree_mode=sys.argv[3] == 'tree')
 
 if sys.argv[2] == 'create':
 	rogue_child = o.Dict({})
@@ -436,17 +50,67 @@ if sys.argv[2] == 'create':
 	o.V.gc_removed  = removed
 	del o.V.gc_removed
 
+	rogue_key   = o.services.Entity.get(next(iter(rogue.__items__)))
+	kept_key    = o.services.Entity.get(next(iter(kept.__items__)))
+	removed_key = o.services.Entity.get(next(iter(removed.__items__)))
+
 	objects = {
-		'rogue'        : (rogue.id, rogue.__proto__),
-		'rogue_child'  : (rogue_child.id, rogue_child.__proto__),
-		'kept'         : (kept.id, kept.__proto__),
-		'kept_child'   : (kept_child.id, kept_child.__proto__),
-		'removed'      : (removed.id, removed.__proto__),
-		'removed_child': (removed_child.id, removed_child.__proto__),
+		'rogue'         : rogue,
+		'rogue_child'   : rogue_child,
+		'rogue_key'     : rogue_key,
+		'kept'          : kept,
+		'kept_child'    : kept_child,
+		'kept_key'      : kept_key,
+		'removed'       : removed,
+		'removed_child' : removed_child,
+		'removed_key'   : removed_key,
 	}
+	if sys.argv[3] == 'graph':
+		cycle_a = o.List([])
+		cycle_b = o.List([cycle_a])
+		cycle_a.append(cycle_b)
+		o.V.gc_cycle = cycle_a
+		del o.V.gc_cycle
+
+		nested_a = o.List([])
+		nested_b = o.List([nested_a])
+		nested_a.append(nested_b)
+		o.V.gc_cycle_parent = o.List([nested_a])
+		del o.V.gc_cycle_parent
+
+		shared_a = o.List([])
+		shared_b = o.List([shared_a])
+		shared_a.append(shared_b)
+		o.V.gc_shared_a = shared_a
+		o.V.gc_shared_b = shared_b
+		del o.V.gc_shared_a
+
+		objects.update({
+			'cycle_a'  : cycle_a,
+			'cycle_b'  : cycle_b,
+			'nested_a' : nested_a,
+			'nested_b' : nested_b,
+			'shared_a' : shared_a,
+			'shared_b' : shared_b,
+		})
+
+	objects = {name: (item.id, item.__proto__) for name, item in objects.items()}
+	assert not list(o.services.Memory.keys('garbage/')), 'Hot path wrote GC metadata'
 
 	with open(os.path.join(sys.argv[1], 'objects.json'), 'w', encoding='utf-8') as file:
 		json.dump(objects, file)
+
+	if sys.argv[4] == 'collect':
+		assert callable(o.collect), 'Missing o.collect API'
+		assert o.collect() > 0, 'On-demand collection removed nothing'
+		assert o.services.Memory.has(kept.__proto__)
+		assert not o.services.Memory.has(rogue.__proto__)
+		assert not o.services.Id.has(rogue.id)
+
+		# Reusing a collected instance must not create a dangling root edge.
+		# ----------------------------------------------------------------------
+		o.V.gc_relinked = rogue
+		assert o.services.Id.has(rogue.id), 'Collected instance linked with no persistent identity'
 else:
 	with open(os.path.join(sys.argv[1], 'objects.json'), encoding='utf-8') as file:
 		objects = json.load(file)
@@ -455,14 +119,27 @@ else:
 
 	for name, (id, proto) in objects.items():
 		present[name] = o.services.Memory.has(proto)
+		assert o.services.Id.has(id) == present[name], f'ID mapping disagrees for {name}'
 		print(f'{name}: id={id}, present={present[name]}', flush=True)
 
+	assert not list(o.services.Memory.keys('garbage/')), 'Obsolete GC metadata survived restart'
 	assert present['kept'], 'Object linked to o.V disappeared'
 	assert present['kept_child'], 'Child linked through o.V disappeared'
+	assert present['kept_key'], 'Dictionary key linked through o.V disappeared'
 	assert not present['removed'], 'Object detached from o.V survived restart'
 	assert not present['removed_child'], 'Child detached through o.V survived restart'
+	assert not present['removed_key'], 'Dictionary key detached through o.V survived restart'
 	assert not present['rogue'], 'ROGUE: unattached object survived restart'
 	assert not present['rogue_child'], 'ROGUE: unattached child survived restart'
+	assert not present['rogue_key'], 'ROGUE: unattached dictionary key survived restart'
+
+	if sys.argv[3] == 'graph':
+		for name in ('cycle_a', 'cycle_b', 'nested_a', 'nested_b'):
+			assert not present[name], f'Detached cycle survived restart: {name}'
+
+		for name in ('shared_a', 'shared_b'):
+			assert present[name], f'Externally retained cycle was collected: {name}'
+
 
 o.services.Memory.env.close()
 '''
@@ -474,7 +151,8 @@ o.services.Memory.env.close()
 
 			for mode in ('create', 'verify'):
 				result = subprocess.run(
-					[sys.executable, '-c', source, directory, mode],
+					[sys.executable, '-c', source, directory, mode, tree_mode,
+					 'collect' if collect_on_demand else 'startup'],
 					env            = environment,
 					capture_output = True,
 					text           = True,
@@ -482,6 +160,24 @@ o.services.Memory.env.close()
 				)
 				assert result.returncode == 0, result.stdout + result.stderr
 
+
+	# ======================================================================
+	# PUBLIC METHODS
+	# ======================================================================
+
+	# Verify garbage invariants in both graph and tree modes.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_unattached_tree_is_collected_after_restart(cls):
+		for tree_mode in ('graph', 'tree'):
+			cls._check_root_reachability_after_restart(tree_mode)
+
+	# Verify the same collection contract when invoked during a live session.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_public_collect(cls):
+		for tree_mode in ('graph', 'tree'):
+			cls._check_root_reachability_after_restart(tree_mode, True)
 
 
 if __name__ == '__main__':

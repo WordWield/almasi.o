@@ -6,7 +6,7 @@
 #
 # RESPONSIBILITY BOUNDARIES:
 # Owns: Ontology path selection and service startup.
-# Delegates: Storage to Memory and multiprocess notifications to Transport.
+# Delegates: Storage and collection to Memory/Garbage, notifications to Transport.
 # ==============================================================================
 
 import os
@@ -54,10 +54,18 @@ class Ontology(o.Singleton):
 			result = library[name]
 		except KeyError:
 			result       = type(library).fork(library, name)
-			result.start = result.services.Ontology.start
-			result.fork  = result.services.Ontology.fork
+			result.start   = result.services.Ontology.start
+			result.fork    = result.services.Ontology.fork
+			result.collect = result.services.Ontology.collect
 
 		return result
+
+	# Collect unreachable persistent instances on demand.
+	# Requires a started ontology; returns the number of deleted instances.
+	# ----------------------------------------------------------------------
+	def collect(self):
+		count = o.services.Garbage.collect()
+		return count
 
 	# Open one explicit ontology path or the application's default directory.
 	# sync=False favors throughput; multiprocess=True enables IPC.
@@ -117,7 +125,6 @@ class Ontology(o.Singleton):
 
 		self._initialize_service(o.services.Id)
 		self._initialize_service(o.services.Route)
-		self._initialize_service(o.services.Garbage)
 
 		if is_reconnecting:
 			o.services.Cache.invalidate_all()
@@ -130,6 +137,7 @@ class Ontology(o.Singleton):
 
 		o.services.Entity.ensure_value()
 		o.__cached_names__.add('V')
+		self._initialize_service(o.services.Garbage)
 
 		if multiprocess and not self._multiprocess_enabled:
 			self._initialize_service(

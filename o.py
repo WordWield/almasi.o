@@ -11,7 +11,8 @@ o.DATA_DIR    = None
 o.MEMORY_SIZE = 1073741824
 o.TREE_MODE   = False
 
-# Each ontology starts explicitly; fork() only selects its isolated world.
+# Publish startup, forks, and explicit collection through their owning service.
 # sync=True flushes LMDB commits; False favors throughput over durability.
-o.start = o.services.Ontology.start
-o.fork  = o.services.Ontology.fork
+o.start   = o.services.Ontology.start
+o.fork    = o.services.Ontology.fork
+o.collect = o.services.Ontology.collect

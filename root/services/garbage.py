@@ -1,78 +1,75 @@
 # ==============================================================================
 # GARBAGE SERVICE
 # ==============================================================================
-# Track references and collect unreachable persistent entities.
+# PURPOSE:
+# Remove persisted instances that are unreachable from o.V.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Rooted reachability traversal and persistent instance collection.
+# Delegates: Identity enumeration to Id and reference enumeration to O instances.
 # ==============================================================================
 
 from almasi import o
+
+
 class Garbage(o.Singleton):
 
-	# Initialize service
+	# ======================================================================
+	# PUBLIC METHODS
+	# ======================================================================
+
+	# Collect only after ontology classes and o.V have been initialized.
 	# ----------------------------------------------------------------------
 	def initialize(self):
-		memory = o.services.Memory
-
-		self.refcounts = memory.zone('garbage/refcounts/')
-		self.garbage   = memory.zone('garbage/items/')
-
 		self.collect()
 
-	# Link holding edge
-	# ----------------------------------------------------------------------
-	def on_instance_link(self, instance):
-		with o.services.Memory.write():
-			self._on_instance_link(instance)
-
-	# Link holding edge in active transaction
-	# ----------------------------------------------------------------------
-	def _on_instance_link(self, instance):
-		old_count = self.refcounts.get(instance.id, 0)
-		count     = old_count + 1
-
-		self.refcounts.set(instance.id, count, instance.id)
-		self.garbage.unset(instance.id, instance.id)
-
-		if old_count == 0:
-			for key, n_proto, child in instance.__dependants__():
-				self._on_instance_link(child)
-
-	# Unlink holding edge
-	# ----------------------------------------------------------------------
-	def on_instance_unlink(self, instance):
-		with o.services.Memory.write():
-			self._on_instance_unlink(instance)
-
-	# Unlink holding edge in active transaction
-	# ----------------------------------------------------------------------
-	def _on_instance_unlink(self, instance):
-		old_count = self.refcounts.get(instance.id, 0)
-		count     = max(old_count - 1, 0)
-
-		if count == 0:
-			self.refcounts.unset(instance.id, instance.id)
-			self.garbage.set(instance.id, instance.__proto__, instance.id)
-
-			if old_count == 1:
-				for key, n_proto, child in instance.__dependants__():
-					self._on_instance_unlink(child)
-		else:
-			self.refcounts.set(instance.id, count, instance.id)
-
-	# Collect garbage storage
+	# Mark from o.V and sweep unvisited instances in one LMDB transaction.
 	# ----------------------------------------------------------------------
 	def collect(self):
-		with o.services.Memory.write():
-			for id, proto in self.garbage.items():
+		memory = o.services.Memory
+
+		with memory.write():
+			# Refresh cached edges before tracing a shared persistent graph.
+			# ----------------------------------------------------------------------
+			o.services.Cache.invalidate_all()
+
+			visited = set()
+			pending = [o.services.Entity.ensure_value()]
+
+			while pending:
+				instance = pending.pop()
+
+				if instance.id not in visited:
+					visited.add(instance.id)
+					pending.extend(instance.__get_outgoing_references__())
+
+			obsolete = [
+				(int(id), proto)
+				for id, proto in o.services.Id.zone.items()
+				if o.TMeta.is_instance_version(proto.rsplit('.', 1)[-1])
+				and int(id) not in visited
+			]
+
+			for id, proto in obsolete:
 				if o.TREE_MODE:
-					o.services.Memory.unset(f'tree/parents/{id}', int(id))
+					memory.unset(f'tree/parents/{id}', id)
 
-				owner_id = (int(id), o.services.Id.hash(proto.rsplit('.', 1)[0]))
-				o.services.Memory.unset(proto, owner_id)
-				o.services.Memory.zone(f'{proto}.').clear()
+				class_id = o.services.Id.hash(proto.rsplit('.', 1)[0])
+				memory.unset(proto, (id, class_id))
+				memory.zone(f'{proto}.').clear()
+				o.services.Id.unset(id)
 
-			self.clear()
+			# Drop obsolete bookkeeping from previous GC implementations.
+			# ----------------------------------------------------------------------
+			memory.zone('garbage/refcounts/').clear()
+			memory.zone('garbage/items/').clear()
 
-	# Clear garbage storage
-	# ----------------------------------------------------------------------
-	def clear(self):
-		self.garbage.clear(int(id) for id in self.garbage.keys())
+		# Discard stale runtime lookups only after persistent deletion commits.
+		# ----------------------------------------------------------------------
+		for id, proto in obsolete:
+			cached = o.services.Cache.entities.get(id)
+
+			if cached is not None:
+				o.services.Cache.unregister(cached)
+
+		return len(obsolete)
