@@ -13,9 +13,9 @@ class Garbage(o.Singleton):
 	# PRIVATE METHODS
 	# ======================================================================
 
-	# Treat the persistent root and explicit root-level calls as reachable.
+	# Consider o.V reachable and allow explicit calls without an owner.
 	# ----------------------------------------------------------------------
-	def _is_reachable_from_root(self, owner):
+	def _is_reachable(self, owner):
 		return (
 			owner is None
 			or isinstance(owner, o.T.V)
@@ -74,14 +74,14 @@ class Garbage(o.Singleton):
 	# Count new edges only when the containing object is reachable.
 	# ----------------------------------------------------------------------
 	def on_instance_link(self, instance, owner=None):
-		if self._is_reachable_from_root(owner):
+		if self._is_reachable(owner):
 			with o.services.Memory.write():
 				self._on_instance_link(instance)
 
 	# Remove edges only when they were counted through a reachable owner.
 	# ----------------------------------------------------------------------
 	def on_instance_unlink(self, instance, owner=None):
-		if self._is_reachable_from_root(owner):
+		if self._is_reachable(owner):
 			with o.services.Memory.write():
 				self._on_instance_unlink(instance)
 
