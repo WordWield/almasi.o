@@ -428,15 +428,21 @@ o.start(path=os.path.join(sys.argv[1], 'ontology'))
 if sys.argv[2] == 'create':
 	rogue_child = o.Dict({})
 	rogue       = o.Dict({'child': rogue_child})
-	kept_child  = o.Dict({})
-	kept        = o.Dict({'child': kept_child})
+	kept_child    = o.Dict({})
+	kept          = o.Dict({'child': kept_child})
+	removed_child = o.Dict({})
+	removed       = o.Dict({'child': removed_child})
 	o.V.gc_retained = kept
+	o.V.gc_removed  = removed
+	del o.V.gc_removed
 
 	objects = {
-		'rogue'       : (rogue.id, rogue.__proto__),
-		'rogue_child' : (rogue_child.id, rogue_child.__proto__),
-		'kept'        : (kept.id, kept.__proto__),
-		'kept_child'  : (kept_child.id, kept_child.__proto__),
+		'rogue'        : (rogue.id, rogue.__proto__),
+		'rogue_child'  : (rogue_child.id, rogue_child.__proto__),
+		'kept'         : (kept.id, kept.__proto__),
+		'kept_child'   : (kept_child.id, kept_child.__proto__),
+		'removed'      : (removed.id, removed.__proto__),
+		'removed_child': (removed_child.id, removed_child.__proto__),
 	}
 
 	with open(os.path.join(sys.argv[1], 'objects.json'), 'w', encoding='utf-8') as file:
@@ -453,6 +459,8 @@ else:
 
 	assert present['kept'], 'Object linked to o.V disappeared'
 	assert present['kept_child'], 'Child linked through o.V disappeared'
+	assert not present['removed'], 'Object detached from o.V survived restart'
+	assert not present['removed_child'], 'Child detached through o.V survived restart'
 	assert not present['rogue'], 'ROGUE: unattached object survived restart'
 	assert not present['rogue_child'], 'ROGUE: unattached child survived restart'
 
