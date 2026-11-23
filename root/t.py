@@ -290,6 +290,12 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 					child = o.services.Entity.get(child_id)
 					yield name, f'{path}.{name}', child
 
+	# Expose all children retained by this entity for garbage collection.
+	# ----------------------------------------------------------------------
+	def __holding_children__(self):
+		for _, _, child in self.__dependants__():
+			yield child
+
 	# Cast Python-visible value into entity
 	# ----------------------------------------------------------------------
 	def __cast_in__(self, value):
