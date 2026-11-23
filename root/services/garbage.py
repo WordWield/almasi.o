@@ -50,7 +50,7 @@ class Garbage(o.Singleton):
 		self.garbage.unset(instance.id, instance.id)
 
 		if old_count == 0:
-			for key, n_proto, child in instance.__dependants__():
+			for child in instance.__holding_children__():
 				self._on_instance_link(child)
 
 	# Unlink a holding edge whose owner was retained.
@@ -71,7 +71,7 @@ class Garbage(o.Singleton):
 			self.garbage.set(instance.id, instance.__proto__, instance.id)
 
 			if old_count == 1:
-				for key, n_proto, child in instance.__dependants__():
+				for child in instance.__holding_children__():
 					self._on_instance_unlink(child)
 		else:
 			self.refcounts.set(instance.id, count, instance.id)
