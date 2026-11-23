@@ -2,7 +2,7 @@
 # GARBAGE SERVICE
 # ==============================================================================
 # PURPOSE:
-# Remove persisted instances that are unreachable from o.V at startup.
+# Remove persisted instances that are unreachable from o.V.
 #
 # RESPONSIBILITY BOUNDARIES:
 # Owns: Rooted reachability traversal and persistent instance collection.
@@ -29,6 +29,10 @@ class Garbage(o.Singleton):
 		memory = o.services.Memory
 
 		with memory.write():
+			# Refresh cached edges before tracing a shared persistent graph.
+			# ----------------------------------------------------------------------
+			o.services.Cache.invalidate_all()
+
 			visited = set()
 			pending = [o.services.Entity.ensure_value()]
 
@@ -59,3 +63,13 @@ class Garbage(o.Singleton):
 			# ----------------------------------------------------------------------
 			memory.zone('garbage/refcounts/').clear()
 			memory.zone('garbage/items/').clear()
+
+		# Discard stale runtime lookups only after persistent deletion commits.
+		# ----------------------------------------------------------------------
+		for id, proto in obsolete:
+			cached = o.services.Cache.entities.get(id)
+
+			if cached is not None:
+				o.services.Cache.unregister(cached)
+
+		return len(obsolete)
