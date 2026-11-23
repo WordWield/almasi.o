@@ -6,7 +6,7 @@
 #
 # RESPONSIBILITY BOUNDARIES:
 # Owns: Object fields, identity and lifecycle notifications.
-# Delegates: Retention and collection to Garbage.
+# Delegates: Persistent instance collection to Garbage at startup.
 # ==============================================================================
 
 import os
@@ -172,7 +172,7 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 			object.__delattr__(self, name)
 
 
-	# Validate and register a holding edge before notifying garbage collection.
+	# Validate tree ownership when adding a holding edge.
 	# ----------------------------------------------------------------------
 	def __link__(self, child, check_only=False, pending=None):
 		if o.TREE_MODE:
@@ -199,12 +199,8 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 				else:
 					raise ValueError('Child already has a parent')
 
-				if not check_only:
-					o.services.Garbage.on_instance_link(child, self)
-		elif not check_only:
-			o.services.Garbage.on_instance_link(child, self)
-
-	# Remove a holding edge and its parent relationship.
+	
+	# Remove the parent relationship in tree mode.
 	# ----------------------------------------------------------------------
 	def __unlink__(self, child):
 		if o.TREE_MODE:
@@ -216,10 +212,7 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 				else:
 					raise ValueError('Parent mismatch')
 
-				o.services.Garbage.on_instance_unlink(child, self)
-		else:
-			o.services.Garbage.on_instance_unlink(child, self)
-
+	
 	# Read instance from memory based on class and version
 	# ----------------------------------------------------------------------
 	@classmethod
@@ -239,7 +232,7 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 
 		return self
 
-	# Write born subclass instance
+	# Persist a new instance without runtime garbage bookkeeping.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def __write__(cls, kwargs):
@@ -248,10 +241,9 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 		with o.services.Memory.write() as memory:
 			version = cls.__inc_version__()
 			proto   = f'{cls.__proto__}._{version}'
-			id      = o.services.Id.set(proto)
+			o.services.Id.set(proto)
 
 			memory.set(proto, True, cls.id)
-			o.services.Garbage.on_instance_create(cls, id, proto)
 
 		with o.services.Memory.read():
 			for name, field in cls._.items():
