@@ -1,7 +1,12 @@
 # ==============================================================================
 # T
 # ==============================================================================
-# Define the persistent root class and instance lifecycle.
+# PURPOSE:
+# Define persistent instances and their holding-edge notifications.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Object fields, identity and lifecycle notifications.
+# Delegates: Retention and collection to Garbage.
 # ==============================================================================
 
 import os
@@ -195,9 +200,9 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 					raise ValueError('Child already has a parent')
 
 				if not check_only:
-					o.services.Garbage.on_instance_link(child)
+					o.services.Garbage.on_instance_link(child, self)
 		elif not check_only:
-			o.services.Garbage.on_instance_link(child)
+			o.services.Garbage.on_instance_link(child, self)
 
 	# Remove a holding edge and its parent relationship.
 	# ----------------------------------------------------------------------
@@ -211,9 +216,9 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 				else:
 					raise ValueError('Parent mismatch')
 
-				o.services.Garbage.on_instance_unlink(child)
+				o.services.Garbage.on_instance_unlink(child, self)
 		else:
-			o.services.Garbage.on_instance_unlink(child)
+			o.services.Garbage.on_instance_unlink(child, self)
 
 	# Read instance from memory based on class and version
 	# ----------------------------------------------------------------------
@@ -246,6 +251,7 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 			id      = o.services.Id.set(proto)
 
 			memory.set(proto, True, cls.id)
+			o.services.Garbage.on_instance_create(cls, id, proto)
 
 		with o.services.Memory.read():
 			for name, field in cls._.items():
@@ -288,6 +294,12 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 				if '.' not in name and not name.startswith('_'):
 					child = o.services.Entity.get(child_id)
 					yield name, f'{path}.{name}', child
+
+	# Return instances referenced by stored fields and container entries.
+	# ----------------------------------------------------------------------
+	def __get_outgoing_references__(self):
+		for _, _, child in self.__dependants__():
+			yield child
 
 	# Cast Python-visible value into entity
 	# ----------------------------------------------------------------------
