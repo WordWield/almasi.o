@@ -1,7 +1,12 @@
 # ==============================================================================
 # TEST GARBAGE
 # ==============================================================================
-# Verify reference counting and collection of unreachable entities.
+# PURPOSE:
+# Verify persisted object graphs obey o.V reachability across restarts.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Garbage collection regression tests.
+# Delegates: Storage, object identity and link semantics to O.
 # ==============================================================================
 
 import os
@@ -27,6 +32,12 @@ class GarbageInstance:
 				yield dependant
 			else:
 				yield dependant.__proto__, dependant.__proto__, dependant
+
+	# Expose outgoing references like real O entities for isolated GC tests.
+	# ----------------------------------------------------------------------
+	def __get_outgoing_references__(self):
+		for _, _, child in self.__dependants__():
+			yield child
 
 
 class TestGarbage(o.Tester):
@@ -409,10 +420,86 @@ class TestGarbage(o.Tester):
 			cls._restore_memory(state)
 
 
-	# Verify unretained objects disappear after a fresh process opens LMDB.
+	# A detached two-node cycle must not retain itself.
 	# ----------------------------------------------------------------------
 	@classmethod
-	def test_unattached_tree_is_collected_after_restart(cls):
+	def test_detached_cycle_is_collected(cls):
+		state = cls._patch_memory()
+
+		try:
+			garbage = state['garbage']
+			first   = cls._instance(62, 'o.T.CycleA._0')
+			second  = cls._instance(63, 'o.T.CycleB._0')
+
+			first.dependants  = [second]
+			second.dependants = [first]
+			garbage.on_instance_link(first)
+			garbage.on_instance_unlink(first)
+
+			assert garbage.refcounts.get(first.id, 0) == 0
+			assert garbage.refcounts.get(second.id, 0) == 0
+			assert garbage.garbage.has(first.id)
+			assert garbage.garbage.has(second.id)
+		finally:
+			cls._restore_memory(state)
+
+	# A cycle stays alive while an independent holding edge remains.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_externally_retained_cycle_survives(cls):
+		state = cls._patch_memory()
+
+		try:
+			garbage = state['garbage']
+			first   = cls._instance(64, 'o.T.CycleA._1')
+			second  = cls._instance(65, 'o.T.CycleB._1')
+
+			first.dependants  = [second]
+			second.dependants = [first]
+			garbage.on_instance_link(first)
+			garbage.on_instance_link(second)
+			garbage.on_instance_unlink(first)
+
+			assert garbage.refcounts.get(first.id, 0) > 0
+			assert garbage.refcounts.get(second.id, 0) > 0
+			assert not garbage.garbage.has(first.id)
+			assert not garbage.garbage.has(second.id)
+
+			garbage.on_instance_unlink(second)
+
+			assert garbage.refcounts.get(first.id, 0) == 0
+			assert garbage.refcounts.get(second.id, 0) == 0
+		finally:
+			cls._restore_memory(state)
+
+	# Releasing an acyclic parent also releases its cyclic descendants.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_cycle_below_detached_parent_is_collected(cls):
+		state = cls._patch_memory()
+
+		try:
+			garbage = state['garbage']
+			first   = cls._instance(66, 'o.T.CycleA._2')
+			second  = cls._instance(67, 'o.T.CycleB._2')
+			parent  = cls._instance(68, 'o.T.Parent._2', [first])
+
+			first.dependants  = [second]
+			second.dependants = [first]
+			garbage.on_instance_link(parent)
+			garbage.on_instance_unlink(parent)
+
+			assert garbage.refcounts.get(parent.id, 0) == 0
+			assert garbage.refcounts.get(first.id, 0) == 0
+			assert garbage.refcounts.get(second.id, 0) == 0
+		finally:
+			cls._restore_memory(state)
+
+
+	# Verify rooted, detached, and orphaned trees in separate processes.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def _check_root_reachability_after_restart(cls, tree_mode):
 		with tempfile.TemporaryDirectory(prefix='o_garbage_restart_') as directory:
 			source = '''
 import json
@@ -423,7 +510,7 @@ from types import SimpleNamespace
 from almasi import o
 
 type(o).__app__ = SimpleNamespace(__lib_path__=sys.argv[1])
-o.start(path=os.path.join(sys.argv[1], 'ontology'))
+o.start(path=os.path.join(sys.argv[1], 'ontology'), tree_mode=sys.argv[3] == 'tree')
 
 if sys.argv[2] == 'create':
 	rogue_child = o.Dict({})
@@ -436,14 +523,51 @@ if sys.argv[2] == 'create':
 	o.V.gc_removed  = removed
 	del o.V.gc_removed
 
+	rogue_key   = o.services.Entity.get(next(iter(rogue.__items__)))
+	kept_key    = o.services.Entity.get(next(iter(kept.__items__)))
+	removed_key = o.services.Entity.get(next(iter(removed.__items__)))
+
 	objects = {
-		'rogue'        : (rogue.id, rogue.__proto__),
-		'rogue_child'  : (rogue_child.id, rogue_child.__proto__),
-		'kept'         : (kept.id, kept.__proto__),
-		'kept_child'   : (kept_child.id, kept_child.__proto__),
-		'removed'      : (removed.id, removed.__proto__),
-		'removed_child': (removed_child.id, removed_child.__proto__),
+		'rogue'         : rogue,
+		'rogue_child'   : rogue_child,
+		'rogue_key'     : rogue_key,
+		'kept'          : kept,
+		'kept_child'    : kept_child,
+		'kept_key'      : kept_key,
+		'removed'       : removed,
+		'removed_child' : removed_child,
+		'removed_key'   : removed_key,
 	}
+	if sys.argv[3] == 'graph':
+		cycle_a = o.List([])
+		cycle_b = o.List([cycle_a])
+		cycle_a.append(cycle_b)
+		o.V.gc_cycle = cycle_a
+		del o.V.gc_cycle
+
+		nested_a = o.List([])
+		nested_b = o.List([nested_a])
+		nested_a.append(nested_b)
+		o.V.gc_cycle_parent = o.List([nested_a])
+		del o.V.gc_cycle_parent
+
+		shared_a = o.List([])
+		shared_b = o.List([shared_a])
+		shared_a.append(shared_b)
+		o.V.gc_shared_a = shared_a
+		o.V.gc_shared_b = shared_b
+		del o.V.gc_shared_a
+
+		objects.update({
+			'cycle_a'  : cycle_a,
+			'cycle_b'  : cycle_b,
+			'nested_a' : nested_a,
+			'nested_b' : nested_b,
+			'shared_a' : shared_a,
+			'shared_b' : shared_b,
+		})
+
+	objects = {name: (item.id, item.__proto__) for name, item in objects.items()}
 
 	with open(os.path.join(sys.argv[1], 'objects.json'), 'w', encoding='utf-8') as file:
 		json.dump(objects, file)
@@ -455,14 +579,26 @@ else:
 
 	for name, (id, proto) in objects.items():
 		present[name] = o.services.Memory.has(proto)
+		assert o.services.Id.has(id) == present[name], f'ID mapping disagrees for {name}'
 		print(f'{name}: id={id}, present={present[name]}', flush=True)
 
 	assert present['kept'], 'Object linked to o.V disappeared'
 	assert present['kept_child'], 'Child linked through o.V disappeared'
+	assert present['kept_key'], 'Dictionary key linked through o.V disappeared'
 	assert not present['removed'], 'Object detached from o.V survived restart'
 	assert not present['removed_child'], 'Child detached through o.V survived restart'
+	assert not present['removed_key'], 'Dictionary key detached through o.V survived restart'
 	assert not present['rogue'], 'ROGUE: unattached object survived restart'
 	assert not present['rogue_child'], 'ROGUE: unattached child survived restart'
+	assert not present['rogue_key'], 'ROGUE: unattached dictionary key survived restart'
+
+	if sys.argv[3] == 'graph':
+		for name in ('cycle_a', 'cycle_b', 'nested_a', 'nested_b'):
+			assert not present[name], f'Detached cycle survived restart: {name}'
+
+		for name in ('shared_a', 'shared_b'):
+			assert present[name], f'Externally retained cycle was collected: {name}'
+
 
 o.services.Memory.env.close()
 '''
@@ -474,7 +610,7 @@ o.services.Memory.env.close()
 
 			for mode in ('create', 'verify'):
 				result = subprocess.run(
-					[sys.executable, '-c', source, directory, mode],
+					[sys.executable, '-c', source, directory, mode, tree_mode],
 					env            = environment,
 					capture_output = True,
 					text           = True,
@@ -482,6 +618,13 @@ o.services.Memory.env.close()
 				)
 				assert result.returncode == 0, result.stdout + result.stderr
 
+
+	# Verify garbage invariants in both graph and tree modes.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_unattached_tree_is_collected_after_restart(cls):
+		for tree_mode in ('graph', 'tree'):
+			cls._check_root_reachability_after_restart(tree_mode)
 
 
 if __name__ == '__main__':
