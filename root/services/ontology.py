@@ -6,7 +6,7 @@
 #
 # RESPONSIBILITY BOUNDARIES:
 # Owns: Ontology path selection and service startup.
-# Delegates: Storage to Memory and multiprocess notifications to Transport.
+# Delegates: Storage and collection to Memory/Garbage, notifications to Transport.
 # ==============================================================================
 
 import os
@@ -117,7 +117,6 @@ class Ontology(o.Singleton):
 
 		self._initialize_service(o.services.Id)
 		self._initialize_service(o.services.Route)
-		self._initialize_service(o.services.Garbage)
 
 		if is_reconnecting:
 			o.services.Cache.invalidate_all()
@@ -130,6 +129,7 @@ class Ontology(o.Singleton):
 
 		o.services.Entity.ensure_value()
 		o.__cached_names__.add('V')
+		self._initialize_service(o.services.Garbage)
 
 		if multiprocess and not self._multiprocess_enabled:
 			self._initialize_service(
