@@ -27,13 +27,6 @@ jobs:
           ref: master
           path: almasi
 
-      - name: Checkout Almasi compatible with O master baseline
-        uses: actions/checkout@v4
-        with:
-          repository: apodgorny/almasi
-          ref: 8d105e9b39d545c40484031d7bc6b1836d2d024d
-          path: almasi_before
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -41,7 +34,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -e ./almasi -e ./after jsonschema
+          python -m pip install -e ./almasi
+          python -m pip install -r ./after/requirements.txt
+          mkdir -p "$RUNNER_TEMP/o_before" "$RUNNER_TEMP/o_after"
+          ln -s "$GITHUB_WORKSPACE/before" "$RUNNER_TEMP/o_before/almasi.o"
+          ln -s "$GITHUB_WORKSPACE/after" "$RUNNER_TEMP/o_after/almasi.o"
 
       - name: Benchmark baseline and PR with declaration included
         run: |
@@ -55,9 +52,9 @@ jobs:
           def measure(revision):
           	root = os.path.join(os.environ['GITHUB_WORKSPACE'], revision)
           	env  = dict(os.environ)
-          	almasi_path = 'almasi_before' if revision == 'before' else 'almasi'
-          	almasi_root = os.path.join(os.environ['GITHUB_WORKSPACE'], almasi_path)
-          	env['PYTHONPATH'] = root + os.pathsep + almasi_root + os.pathsep + env.get('PYTHONPATH', '')
+          	almasi_root = os.path.join(os.environ['GITHUB_WORKSPACE'], 'almasi')
+          	env['PYTHONPATH'] = almasi_root + os.pathsep + env.get('PYTHONPATH', '')
+          	env['ALMASI_PATH'] = os.path.join(os.environ['RUNNER_TEMP'], 'o_' + revision)
           	runner = os.path.join(root, 'root/tests/_test_performance.py')
 
           	completed = subprocess.run(
