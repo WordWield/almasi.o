@@ -28,9 +28,9 @@ class GarbageInstance:
 			else:
 				yield dependant.__proto__, dependant.__proto__, dependant
 
-	# Expose held instances like real O entities for isolated GC tests.
+	# Expose outgoing references like real O entities for isolated GC tests.
 	# ----------------------------------------------------------------------
-	def __held_instances__(self):
+	def __get_outgoing_references__(self):
 		for _, _, child in self.__dependants__():
 			yield child
 
