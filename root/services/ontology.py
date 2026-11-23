@@ -54,10 +54,18 @@ class Ontology(o.Singleton):
 			result = library[name]
 		except KeyError:
 			result       = type(library).fork(library, name)
-			result.start = result.services.Ontology.start
-			result.fork  = result.services.Ontology.fork
+			result.start   = result.services.Ontology.start
+			result.fork    = result.services.Ontology.fork
+			result.collect = result.services.Ontology.collect
 
 		return result
+
+	# Collect unreachable persistent instances on demand.
+	# Requires a started ontology; returns the number of deleted instances.
+	# ----------------------------------------------------------------------
+	def collect(self):
+		count = o.services.Garbage.collect()
+		return count
 
 	# Open one explicit ontology path or the application's default directory.
 	# sync=False favors throughput; multiprocess=True enables IPC.
