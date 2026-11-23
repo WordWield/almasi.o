@@ -1,284 +1,78 @@
 # Garbage Collection Invariants
 
-## Core Idea
+## Purpose
 
-Garbage Collection is fully centralized in `o.services.Garbage`.
+Instances in O are durable only while reachable from `o.V`. Local Python references
+do not retain persisted instances. Objects may remain on disk and addressable by ID
+during a session, even when they are collectable at the next startup.
 
-Classes and instances must not contain GC logic beyond emitting lifecycle events.
+`o.services.Garbage` owns collectability and reference propagation. Classes and
+containers report instance births and holding edges; they do not make GC decisions.
 
----
+## Birth and collection
 
-## 1. Holding Edge Law
-
-Every persistent slot is a holding edge.
-
-Holding edges are also called **hands**.
-
-Hands include:
-
-- object attribute values
-- list items
-- dict keys
-- dict values
-
-Local Python variables are not persistent holding edges.
-
-Therefore:
+Every newly persisted instance is registered in `garbage/items/` in the same
+LMDB transaction that creates its identity. The permanent `o.V` instance is
+the only exception.
 
 ```text
-persistent hands define refcount
-local Python refs do not define refcount
+new instance                 -> garbage[id] = proto
+reachable from o.V           -> remove from garbage
+last rooted holding edge lost -> garbage[id] = proto
+next Garbage.initialize()    -> physically remove marked instance and its ID mapping
 ```
 
----
+No full LMDB sweep is required. Rooted instances and their children are never
+scheduled for collection.
 
-## 2. Refcount Law
+## Holding edges
 
-`refcounts` count direct persistent hands holding an instance.
+Persistent slots include object fields, list items, dictionary keys, and
+dictionary values. A slot contributes to GC liveness **only if its owner is
+already reachable from `o.V`**. An edge inside an unattached subtree has no
+retention effect yet.
 
-If the same instance is stored multiple times, each slot counts independently.
+At the boundary of the retained graph:
 
-Therefore:
+- Linking the first retained owner increments the child's refcount from 0 to 1
+  and recursively retains all its holding children.
+- Linking an additional retained owner increments only the child's refcount.
+- Unlinking one of multiple retained owners decrements only that refcount.
+- Unlinking the last retained owner decrements from 1 to 0, marks the child as
+  collectable, and recursively releases its holding children.
 
-```text
-same instance in two slots -> refcount +2
-remove one slot           -> refcount -1
-```
+The root value is always retained without a counted incoming edge.
+`on_instance_link(instance, owner)` and
+`on_instance_unlink(instance, owner)` apply these rules. Their optional owner
+defaults to `None` for explicit low-level calls without an enclosing object.
 
-Refcount is local to the held instance.
+## Semantic dependants versus holding children
 
----
+`__dependants__()` describes semantic child values, which other consumers
+(e.g., representation) rely on. `__holding_children__()` enumerates **all**
+GC edges and is used only for reference propagation.
 
-## 3. Boundary Propagation Law
+For a normal instance and a list, both traversals have the same children.
+For a dictionary, holding children also include the persisted key entities,
+without adding them to the semantic `__dependants__()` output.
 
-Refcount propagation to `__dependants__` happens only when liveness crosses zero.
+## Storage and startup
 
-```text
-0 -> 1  means instance becomes held
-        propagate +1 to dependants
+`refcounts` stores the number of incoming retained edges. Multiple direct
+slots retain the same object independently; subtrees receive propagation only
+when a node crosses the zero/nonzero boundary.
 
-1 -> 0  means instance becomes unheld
-        propagate -1 to dependants
+Garbage is collected on `Garbage.initialize()`, after the LMDB store opens.
+Collection removes the instance record, its stored fields, its ID registry
+mapping, and any tree-mode parent mapping.
 
-1 -> 2  no propagation
-2 -> 1  no propagation
-```
+This is deferred collection: it neither consults Python refcounts nor destroys
+objects while callers might still be using their IDs during the current session.
 
-This prevents duplicated hands on the same object from duplicating the whole dependency subtree.
+## Regression evidence
 
-Formula:
-
-```text
-slot multiplicity = local refcount
-subtree liveness  = boundary propagation
-```
-
----
-
-## 4. Dependants Law
-
-`instance.__dependants__` returns the direct instances held by this instance's own persistent hands.
-
-Garbage propagation must go through `__dependants__` only inside `o.services.Garbage`.
-
-Classes, containers, and instances may expose dependants, but they must not own propagation policy.
-
----
-
-## 5. Garbage Storage Law
-
-When an instance refcount drops to zero, it is not deleted immediately.
-
-It is placed into garbage storage.
-
-```text
-refcount == 0 -> garbage.set(instance.id, instance.proto)
-```
-
-Garbage storage maps:
-
-```text
-garbage key   = entity.id
-garbage value = entity.proto
-```
-
-The value is `proto` because physical cleanup uses prefix removal:
-
-```text
-Memory.unset_all(proto)
-```
-
----
-
-## 6. Link Law
-
-On instance link:
-
-```text
-old_count = refcounts.get(instance.id, 0)
-count     = old_count + 1
-
-refcounts.set(instance.id, count)
-garbage.unset(instance.id)
-
-if old_count == 0:
-    propagate link to instance.__dependants__
-```
-
-Meaning:
-
-- every hand increments local refcount
-- any new holding edge removes the instance from garbage
-- dependants receive propagated link only when the instance becomes newly held
-
----
-
-## 7. Unlink Law
-
-On instance unlink:
-
-```text
-old_count = refcounts.get(instance.id, 0)
-count     = max(old_count - 1, 0)
-
-if count == 0:
-    refcounts.unset(instance.id)
-    garbage.set(instance.id, instance.proto)
-
-    if old_count == 1:
-        propagate unlink to instance.__dependants__
-else:
-    refcounts.set(instance.id, count)
-```
-
-Meaning:
-
-- every removed hand decrements local refcount
-- refcount does not go below zero
-- zero-ref instances are marked as garbage, not immediately deleted
-- dependants receive propagated unlink only when the instance becomes unheld
-
----
-
-## 8. Temp Class Law
-
-Temp classes are runtime-created unnamed classes.
-
-A temp class has:
-
-```text
-cls.__is_temp__ == True
-```
-
-Temp classes cannot be subclassed.
-
-If a temp class is used as a base, the system must raise.
-
-Therefore a temp class can only be kept alive by its instances.
-
----
-
-## 9. Temp Class Garbage Law
-
-When a temp class is born, it is added to garbage immediately.
-
-```text
-temp class born -> garbage.set(cls.id, cls.proto)
-```
-
-When the first instance of a temp class is created, the temp class is removed from garbage.
-
-```text
-instancecount 0 -> 1 -> garbage.unset(cls.id)
-```
-
-When the last instance of a temp class dies, the temp class is returned to garbage.
-
-```text
-instancecount 1 -> 0 -> garbage.set(cls.id, cls.proto)
-```
-
-Non-temp classes do not participate in `instancecounts`.
-
----
-
-## 10. Instancecount Law
-
-`instancecounts` are only relevant for temp classes.
-
-They are not general class instance statistics.
-
-They are temp-class liveness counters.
-
-```text
-on temp instance create:
-    instancecounts[cls.id] += 1
-
-on temp instance delete:
-    instancecounts[cls.id] -= 1
-```
-
-When count drops to zero:
-
-```text
-instancecounts.unset(cls.id)
-garbage.set(cls.id, cls.proto)
-```
-
----
-
-## 11. Collection Law
-
-Garbage is collected on `Garbage.initialize()`.
-
-Collection means removing every stored memory room by proto prefix:
-
-```text
-for id, proto in garbage.items():
-    Memory.unset_all(proto)
-
-garbage.clear()
-```
-
-Startup collection is safe because local Python references do not survive restart.
-
----
-
-## 12. Separation of Concerns
-
-Classes and instances:
-
-- emit lifecycle events
-- expose dependants
-- do not own GC policy
-- do not propagate refcounts themselves
-- do not decide collectability
-
-`o.services.Garbage` owns:
-
-- refcounts
-- instancecounts for temp classes
-- propagation through dependants
-- garbage storage
-- collection
-
----
-
-## Summary
-
-```text
-hands define local refcount
-refcount boundary crossings define dependant propagation
-0 -> 1 propagates link
-1 -> 0 propagates unlink
-1 -> 2 and 2 -> 1 do not propagate
-
-zero-ref instance -> garbage[id] = proto
-
-temp class born -> garbage[id] = proto
-first temp instance -> remove temp class from garbage
-last temp instance -> return temp class to garbage
-
-collect on initialize:
-    unset_all(proto) for every garbage item
-```
+`TestGarbage.test_unattached_tree_is_collected_after_restart` uses separate
+Python processes over one isolated LMDB, exercising graph and tree modes.
+It verifies that unattached and detached objects **and their descendants**
+are removed, while objects reachable from `o.V` remain. Dictionary keys and
+ID mappings are checked as well.
