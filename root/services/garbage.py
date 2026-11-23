@@ -1,7 +1,7 @@
 # ==============================================================================
 # GARBAGE SERVICE
 # ==============================================================================
-# Track instances reachable from the persistent root and reclaim unretained data.
+# Track instances reachable from o.V and reclaim unretained data.
 # ==============================================================================
 
 from almasi import o
@@ -35,7 +35,7 @@ class Garbage(o.Singleton):
 			for child in instance.__get_outgoing_references__():
 				self._on_instance_link(child)
 
-	# Release descendants only when the last rooted reference disappears.
+	# Release descendants when the last counted reference disappears.
 	# ----------------------------------------------------------------------
 	def _on_instance_unlink(self, instance):
 		old_count = self.refcounts.get(instance.id, 0)
@@ -65,7 +65,7 @@ class Garbage(o.Singleton):
 
 		self.collect()
 
-	# Mark new non-root instances for deletion unless they become reachable.
+	# Mark new instances other than o.V for deletion until reachable.
 	# ----------------------------------------------------------------------
 	def on_instance_create(self, cls, id, proto):
 		if cls is not o.T.V:
