@@ -187,8 +187,15 @@ class Dict(o.T):
 		for key_id, value_id in self.__items__.items():
 			key        = o.services.Entity.value(key_id)
 			child_path = f'{path}[{repr(key)}]'
-			yield key, f'{child_path}.key', o.services.Entity.get(key_id)
 			yield key, child_path, o.services.Entity.get(value_id)
+
+	# Expose dictionary keys as holding edges without changing value traversal.
+	# ----------------------------------------------------------------------
+	def __holding_children__(self):
+		for key_id in self.__items__:
+			yield o.services.Entity.get(key_id)
+
+		yield from super().__holding_children__()
 
 	# Cast to dict
 	# ----------------------------------------------------------------------
