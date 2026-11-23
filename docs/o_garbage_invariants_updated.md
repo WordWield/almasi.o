@@ -18,11 +18,11 @@ the only exception.
 ```text
 new instance                 -> garbage[id] = proto
 reachable from o.V           -> remove from garbage
-last rooted holding edge lost -> garbage[id] = proto
+last counted holding edge lost -> garbage[id] = proto
 next Garbage.initialize()    -> physically remove marked instance and its ID mapping
 ```
 
-No full LMDB sweep is required. Rooted instances and their children are never
+No full LMDB sweep is required. Instances reachable from o.V and their children are never
 scheduled for collection.
 
 ## Holding edges
@@ -41,7 +41,7 @@ At the boundary of the retained graph:
 - Unlinking the last retained owner decrements from 1 to 0, marks the child as
   collectable, and recursively releases its holding children.
 
-The root value is always retained without a counted incoming edge.
+o.V is always reachable without a counted incoming edge.
 `on_instance_link(instance, owner)` and
 `on_instance_unlink(instance, owner)` apply these rules. Their optional owner
 defaults to `None` for explicit low-level calls without an enclosing object.
