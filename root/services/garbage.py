@@ -37,7 +37,7 @@ class Garbage(o.Singleton):
 
 	# Release descendants when the last counted reference disappears.
 	# ----------------------------------------------------------------------
-	def _on_instance_unlink(self, instance, candidates=None):
+	def _on_instance_unlink(self, instance):
 		old_count = self.refcounts.get(instance.id, 0)
 		count     = max(old_count - 1, 0)
 
@@ -47,68 +47,10 @@ class Garbage(o.Singleton):
 
 			if old_count == 1:
 				for child in instance.__get_outgoing_references__():
-					self._on_instance_unlink(child, candidates)
+					self._on_instance_unlink(child)
 		else:
 			self.refcounts.set(instance.id, count, instance.id)
 
-			if candidates is not None:
-				candidates[instance.id] = instance
-
-	# Find graph members still accessible from o.V after the outgoing edge changes.
-	# ----------------------------------------------------------------------
-	def _update_reachability(self, candidates, owner, removed):
-		reachable = set()
-		pending   = [o.V]
-
-		while pending:
-			instance = pending.pop()
-
-			if instance.id in reachable:
-				continue
-
-			reachable.add(instance.id)
-			skipped = False
-
-			for child in instance.__get_outgoing_references__():
-				if (
-					instance.id == owner.id
-					and child.id == removed.id
-					and not skipped
-				):
-					skipped = True
-				else:
-					pending.append(child)
-
-		if all(id in reachable for id in candidates):
-			return
-
-		unreachable = {}
-		pending     = list(candidates.values())
-
-		while pending:
-			instance = pending.pop()
-
-			if (
-				instance.id not in reachable
-				and instance.id not in unreachable
-				and self.refcounts.get(instance.id, 0) > 0
-			):
-				unreachable[instance.id] = instance
-				pending.extend(instance.__get_outgoing_references__())
-
-		for id, instance in unreachable.items():
-			self.refcounts.unset(id, id)
-			self.garbage.set(id, instance.__proto__, id)
-
-		for instance in unreachable.values():
-			for child in instance.__get_outgoing_references__():
-				if child.id in reachable:
-					count = self.refcounts.get(child.id, 0) - 1
-
-					if count == 0:
-						self.refcounts.unset(child.id, child.id)
-					elif count > 0:
-						self.refcounts.set(child.id, count, child.id)
 
 	# ======================================================================
 	# PUBLIC METHODS
@@ -137,16 +79,12 @@ class Garbage(o.Singleton):
 			with o.services.Memory.write():
 				self._on_instance_link(instance)
 
-	# Update collectability when an outgoing reference disappears.
+	# Remove counted references when their owner is reachable.
 	# ----------------------------------------------------------------------
 	def on_instance_unlink(self, instance, owner=None):
 		if self._is_reachable(owner):
 			with o.services.Memory.write():
-				candidates = {} if not o.TREE_MODE and owner is not None else None
-				self._on_instance_unlink(instance, candidates)
-
-				if candidates:
-					self._update_reachability(candidates, owner, instance)
+				self._on_instance_unlink(instance)
 
 	# Delete marked instances and their ID mappings at the next startup.
 	# ----------------------------------------------------------------------
