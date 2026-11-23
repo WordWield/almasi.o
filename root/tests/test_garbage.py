@@ -467,6 +467,16 @@ if sys.argv[2] == 'create':
 		objects['cycle_a'] = cycle_a
 		objects['cycle_b'] = cycle_b
 
+		live_a = o.List([])
+		live_b = o.List([])
+		live_a.append(live_b)
+		live_b.append(live_a)
+		o.V.gc_live_a = live_a
+		o.V.gc_live_b = live_b
+		del o.V.gc_live_a
+		objects['live_a'] = live_a
+		objects['live_b'] = live_b
+
 	objects = {name: (item.id, item.__proto__) for name, item in objects.items()}
 
 	with open(os.path.join(sys.argv[1], 'objects.json'), 'w', encoding='utf-8') as file:
@@ -494,6 +504,8 @@ else:
 	if sys.argv[3] == 'graph':
 		assert not present['cycle_a'], 'CYCLE: detached cyclic graph survived restart'
 		assert not present['cycle_b'], 'CYCLE: detached cyclic graph child survived restart'
+		assert present['live_a'], 'CYCLE: live alternative path lost its member'
+		assert present['live_b'], 'CYCLE: live alternative path lost its anchor'
 
 o.services.Memory.env.close()
 '''
