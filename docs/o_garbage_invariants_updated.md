@@ -49,7 +49,7 @@ defaults to `None` for explicit low-level calls without an enclosing object.
 ## Semantic dependants versus holding children
 
 `__dependants__()` describes semantic child values, which other consumers
-(e.g., representation) rely on. `__held_instances__()` enumerates **all**
+(e.g., representation) rely on. `__get_outgoing_references__()` enumerates **all**
 GC edges and is used only for reference propagation.
 
 For a normal instance and a list, both traversals have the same children.
