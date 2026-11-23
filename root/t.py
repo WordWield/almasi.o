@@ -290,9 +290,9 @@ class T(o.TReloadableModule, metaclass=o.TMeta):
 					child = o.services.Entity.get(child_id)
 					yield name, f'{path}.{name}', child
 
-	# Enumerate instances held by this entity for garbage collection.
+	# Return instances referenced by stored fields and container entries.
 	# ----------------------------------------------------------------------
-	def __held_instances__(self):
+	def __get_outgoing_references__(self):
 		for _, _, child in self.__dependants__():
 			yield child
 
