@@ -28,6 +28,12 @@ class GarbageInstance:
 			else:
 				yield dependant.__proto__, dependant.__proto__, dependant
 
+	# Expose held children like real O entities for isolated GC tests.
+	# ----------------------------------------------------------------------
+	def __holding_children__(self):
+		for _, _, child in self.__dependants__():
+			yield child
+
 
 class TestGarbage(o.Tester):
 
