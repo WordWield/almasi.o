@@ -1,7 +1,12 @@
 # ==============================================================================
 # DICT
 # ==============================================================================
-# Implement persistent dictionary behavior for ontology entities.
+# PURPOSE:
+# Store typed dictionary entries and their key/value relationships.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Dictionary operations and complete holding-edge enumeration.
+# Delegates: Retention policy to Garbage.
 # ==============================================================================
 
 from collections import Counter
@@ -188,6 +193,14 @@ class Dict(o.T):
 			key        = o.services.Entity.value(key_id)
 			child_path = f'{path}[{repr(key)}]'
 			yield key, child_path, o.services.Entity.get(value_id)
+
+	# Include dictionary keys among outgoing references.
+	# ----------------------------------------------------------------------
+	def __get_outgoing_references__(self):
+		for key_id in self.__items__:
+			yield o.services.Entity.get(key_id)
+
+		yield from super().__get_outgoing_references__()
 
 	# Cast to dict
 	# ----------------------------------------------------------------------
