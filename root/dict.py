@@ -187,6 +187,7 @@ class Dict(o.T):
 		for key_id, value_id in self.__items__.items():
 			key        = o.services.Entity.value(key_id)
 			child_path = f'{path}[{repr(key)}]'
+			yield key, f'{child_path}.key', o.services.Entity.get(key_id)
 			yield key, child_path, o.services.Entity.get(value_id)
 
 	# Cast to dict
