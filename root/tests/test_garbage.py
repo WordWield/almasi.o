@@ -26,7 +26,7 @@ class TestGarbage(o.Tester):
 	# Verify rooted, detached, and orphaned objects in separate processes.
 	# ----------------------------------------------------------------------
 	@classmethod
-	def _check_root_reachability_after_restart(cls, tree_mode):
+	def _check_root_reachability_after_restart(cls, tree_mode, collect_on_demand=False):
 		with tempfile.TemporaryDirectory(prefix='o_garbage_restart_') as directory:
 			source = '''
 import json
@@ -99,6 +99,13 @@ if sys.argv[2] == 'create':
 
 	with open(os.path.join(sys.argv[1], 'objects.json'), 'w', encoding='utf-8') as file:
 		json.dump(objects, file)
+
+	if sys.argv[4] == 'collect':
+		assert callable(o.collect), 'Missing o.collect API'
+		assert o.collect() > 0, 'On-demand collection removed nothing'
+		assert o.services.Memory.has(kept.__proto__)
+		assert not o.services.Memory.has(rogue.__proto__)
+		assert not o.services.Id.has(rogue.id)
 else:
 	with open(os.path.join(sys.argv[1], 'objects.json'), encoding='utf-8') as file:
 		objects = json.load(file)
@@ -139,7 +146,8 @@ o.services.Memory.env.close()
 
 			for mode in ('create', 'verify'):
 				result = subprocess.run(
-					[sys.executable, '-c', source, directory, mode, tree_mode],
+					[sys.executable, '-c', source, directory, mode, tree_mode,
+					 'collect' if collect_on_demand else 'startup'],
 					env            = environment,
 					capture_output = True,
 					text           = True,
@@ -158,6 +166,13 @@ o.services.Memory.env.close()
 	def test_unattached_tree_is_collected_after_restart(cls):
 		for tree_mode in ('graph', 'tree'):
 			cls._check_root_reachability_after_restart(tree_mode)
+
+	# Verify the same collection contract when invoked during a live session.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_public_collect(cls):
+		for tree_mode in ('graph', 'tree'):
+			cls._check_root_reachability_after_restart(tree_mode, True)
 
 
 if __name__ == '__main__':
