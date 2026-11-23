@@ -15,6 +15,12 @@ when an edge changes or an instance is created.
 Ontology.start() opens Memory and Id, loads the ontology classes, and ensures
 that `o.V` exists. Only then does Garbage.initialize() invoke collect().
 
+`o.collect()` is the public synchronous maintenance API, including on forked
+ontologies after `fork.start()`. It returns the number of deleted instances.
+Mark-and-sweep runs under one LMDB write transaction, and cached object state
+is refreshed before tracing. Referenced Python objects that have been removed
+from persistent storage must not be reused as persistent entities.
+
 The collector runs under one LMDB write transaction:
 
 1. Traverse holding edges from `o.V`, marking visited instance IDs.
@@ -43,13 +49,14 @@ These operations remain independent of garbage collection:
 - Graph-mode link and unlink.
 - Tree-mode link validation and parent updates.
 
-During an application session, disconnected objects remain accessible by ID.
-They are physically removed at the next startup.
+During an application session, disconnected objects remain accessible by ID
+until the next `o.collect()` or startup collection. Each collection removes
+unreachable instances and unregisters their stale runtime identities.
 
 ## Complexity
 
 - Hot-path garbage bookkeeping: **none**.
-- Restart traversal: O(V + E) for reachable instances and holding edges.
+- Explicit or startup traversal: O(V + E) for reachable instances and edges.
 - Registry sweep: O(N) for all persisted instance IDs.
 - Memory for the visited set and pending traversal: O(V + E) worst case.
 
