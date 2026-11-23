@@ -409,10 +409,10 @@ class TestGarbage(o.Tester):
 			cls._restore_memory(state)
 
 
-	# Verify unretained objects disappear after a fresh process opens LMDB.
+	# Verify rooted, detached, and orphaned trees in separate processes.
 	# ----------------------------------------------------------------------
 	@classmethod
-	def test_unattached_tree_is_collected_after_restart(cls):
+	def _check_root_reachability_after_restart(cls, tree_mode):
 		with tempfile.TemporaryDirectory(prefix='o_garbage_restart_') as directory:
 			source = '''
 import json
@@ -423,7 +423,7 @@ from types import SimpleNamespace
 from almasi import o
 
 type(o).__app__ = SimpleNamespace(__lib_path__=sys.argv[1])
-o.start(path=os.path.join(sys.argv[1], 'ontology'))
+o.start(path=os.path.join(sys.argv[1], 'ontology'), tree_mode=sys.argv[3] == 'tree')
 
 if sys.argv[2] == 'create':
 	rogue_child = o.Dict({})
@@ -436,14 +436,22 @@ if sys.argv[2] == 'create':
 	o.V.gc_removed  = removed
 	del o.V.gc_removed
 
+	rogue_key   = o.services.Entity.get(next(iter(rogue.__items__)))
+	kept_key    = o.services.Entity.get(next(iter(kept.__items__)))
+	removed_key = o.services.Entity.get(next(iter(removed.__items__)))
+
 	objects = {
-		'rogue'        : (rogue.id, rogue.__proto__),
-		'rogue_child'  : (rogue_child.id, rogue_child.__proto__),
-		'kept'         : (kept.id, kept.__proto__),
-		'kept_child'   : (kept_child.id, kept_child.__proto__),
-		'removed'      : (removed.id, removed.__proto__),
-		'removed_child': (removed_child.id, removed_child.__proto__),
+		'rogue'         : rogue,
+		'rogue_child'   : rogue_child,
+		'rogue_key'     : rogue_key,
+		'kept'          : kept,
+		'kept_child'    : kept_child,
+		'kept_key'      : kept_key,
+		'removed'       : removed,
+		'removed_child' : removed_child,
+		'removed_key'   : removed_key,
 	}
+	objects = {name: (item.id, item.__proto__) for name, item in objects.items()}
 
 	with open(os.path.join(sys.argv[1], 'objects.json'), 'w', encoding='utf-8') as file:
 		json.dump(objects, file)
@@ -455,14 +463,18 @@ else:
 
 	for name, (id, proto) in objects.items():
 		present[name] = o.services.Memory.has(proto)
+		assert o.services.Id.has(id) == present[name], f'ID mapping disagrees for {name}'
 		print(f'{name}: id={id}, present={present[name]}', flush=True)
 
 	assert present['kept'], 'Object linked to o.V disappeared'
 	assert present['kept_child'], 'Child linked through o.V disappeared'
+	assert present['kept_key'], 'Dictionary key linked through o.V disappeared'
 	assert not present['removed'], 'Object detached from o.V survived restart'
 	assert not present['removed_child'], 'Child detached through o.V survived restart'
+	assert not present['removed_key'], 'Dictionary key detached through o.V survived restart'
 	assert not present['rogue'], 'ROGUE: unattached object survived restart'
 	assert not present['rogue_child'], 'ROGUE: unattached child survived restart'
+	assert not present['rogue_key'], 'ROGUE: unattached dictionary key survived restart'
 
 o.services.Memory.env.close()
 '''
@@ -474,7 +486,7 @@ o.services.Memory.env.close()
 
 			for mode in ('create', 'verify'):
 				result = subprocess.run(
-					[sys.executable, '-c', source, directory, mode],
+					[sys.executable, '-c', source, directory, mode, tree_mode],
 					env            = environment,
 					capture_output = True,
 					text           = True,
@@ -482,6 +494,13 @@ o.services.Memory.env.close()
 				)
 				assert result.returncode == 0, result.stdout + result.stderr
 
+
+	# Verify garbage invariants in both graph and tree modes.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_unattached_tree_is_collected_after_restart(cls):
+		for tree_mode in ('graph', 'tree'):
+			cls._check_root_reachability_after_restart(tree_mode)
 
 
 if __name__ == '__main__':
