@@ -184,4 +184,4 @@ asyncio.run(reopened() if os.environ.get('EXTRA') else first())
 				result = subprocess.run([sys.executable, '-c', source, path], env=environment, capture_output=True, text=True, timeout=30)
 				assert result.returncode == 0, result.stdout + result.stderr
 				if extra:
-					assert 'first — skipped' in result.stdout and 'added — complete' in result.stdout
+					assert 'first — skipped' in result.stderr and 'added — complete' in result.stderr
