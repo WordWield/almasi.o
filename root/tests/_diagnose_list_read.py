@@ -1,118 +1,138 @@
 # ==============================================================================
-# ATOMIC READ DIAGNOSTIC
+# LIST READ DIAGNOSTIC
 # ==============================================================================
-# Isolate attribute access and equivalent unwrapping on actual O entities.
+# Compare original and fresh bytecode before and after clearing lookup caches.
 # ==============================================================================
 
 import dis
 import json
 import os
+import runpy
 import statistics
 import sys
 import tempfile
+import threading
 import time
 import timeit
 
-from contextlib    import nullcontext
-from types         import SimpleNamespace
+from functools     import partial
+from types         import FunctionType, MethodType, SimpleNamespace
 from unittest.mock import patch
 
 import almasi
 from almasi import o
 
 
-# Compare the existing class lookup with direct type lookup.
+# Create a worker without entering the native filesystem observer.
 # ------------------------------------------------------------------------------
-def value_by_type(service, identifier):
-	entity = service.get(identifier)
-	value  = entity
-
-	if entity is not o.Undefined:
-		if type(entity).__is_atom__:
-			value = entity.__value__
-
-	return value
+def idle_watch(root, stop):
+	stop.wait()
 
 
-# Measure a single expression using the current thread's CPU time.
+# Preserve startup registration without retaining a running observer.
 # ------------------------------------------------------------------------------
-def measure(statement, scope):
-	timer   = timeit.Timer('for i in range(200000): ' + statement, timer=time.thread_time, globals=scope)
-	samples = timer.repeat(repeat=3, number=1)
-
-	return statistics.median(samples) * 5
+def skip_watch(root, stop):
+	return None
 
 
-# Compare the original expression against each operation it performs.
+# Start native observation only after the initial measurements.
 # ------------------------------------------------------------------------------
-def sample(items):
-	service = o.services.Entity
-	ids     = items.__items__
-	atom    = service.get(ids[0])
-	cls     = type(atom)
-	scope   = {
-		'items'         : items,
-		'ids'           : ids,
-		'atom'          : atom,
-		'cls'           : cls,
-		'service'       : service,
-		'get'           : service.get,
-		'value'         : service.value,
-		'value_by_type' : value_by_type,
+def deferred_watch(watch, ready, root, stop):
+	ready.wait()
+	watch(root, stop)
+
+
+# Create a bound method with identical source and a fresh adaptive code object.
+# ------------------------------------------------------------------------------
+def fresh(method):
+	function = method.__func__
+	copy     = FunctionType(function.__code__.replace(), function.__globals__, function.__name__)
+
+	return MethodType(copy, method.__self__)
+
+
+# Keep the original measurement loop and compare fresh code on the same objects.
+# ------------------------------------------------------------------------------
+def sample(items, results, phase):
+	entity = o.services.Entity
+	ids    = items.__items__
+	scope  = {
+		'items'       : items,
+		'ids'         : ids,
+		'get'         : entity.get,
+		'value'       : entity.value,
+		'fresh_get'   : fresh(entity.get),
+		'fresh_value' : fresh(entity.value),
 	}
-
-	assert atom.__class__ is cls
-	assert atom.__value__ == 1
-	assert cls.__is_atom__
-	assert value_by_type(service, ids[0]) == service.value(ids[0])
 
 	cases = {
-		'list'         : 'items[i % 5]',
-		'get'          : 'get(ids[i % 5])',
-		'value'        : 'value(ids[i % 5])',
-		'class'        : 'atom.__class__',
-		'type'         : 'type(atom)',
-		'flag'         : 'cls.__is_atom__',
-		'class_flag'   : 'atom.__class__.__is_atom__',
-		'type_flag'    : 'type(atom).__is_atom__',
-		'atom_value'   : 'atom.__value__',
-		'by_type'      : 'value_by_type(service, ids[i % 5])',
-		'inline'       : 'entity = get(ids[i % 5]); result = entity.__value__ if entity.__class__.__is_atom__ else entity',
-		'inline_type'  : 'entity = get(ids[i % 5]); result = entity.__value__ if type(entity).__is_atom__ else entity',
+		'list'        : 'items[i % 5]',
+		'get'         : 'get(ids[i % 5])',
+		'value'       : 'value(ids[i % 5])',
+		'fresh_get'   : 'fresh_get(ids[i % 5])',
+		'fresh_value' : 'fresh_value(ids[i % 5])',
 	}
-	results = {name: measure(statement, scope) for name, statement in cases.items()}
 
-	dis.dis(service.value, adaptive=True, show_caches=True, file=sys.stderr)
-	dis.dis(service.get, adaptive=True, show_caches=True, file=sys.stderr)
-	dis.dis(value_by_type, adaptive=True, show_caches=True, file=sys.stderr)
+	for name, statement in cases.items():
+		timer   = timeit.Timer('for i in range(100000): ' + statement, timer=time.thread_time, globals=scope)
+		samples = timer.repeat(repeat=3, number=1)
+		results[phase + '/' + name] = statistics.median(samples) * 10
 
-	return results
+	print(phase, file=sys.stderr)
+
+	for method in (entity.get, entity.value, scope['fresh_get'], scope['fresh_value']):
+		dis.dis(method, adaptive=True, show_caches=True, file=sys.stderr)
 
 
-# Preserve real initialization while controlling filesystem observation.
+# Compare lookup state without changing ontology data or observer lifetimes.
 # ------------------------------------------------------------------------------
 def run():
-	root        = os.environ['EXPECTED_ROOT']
-	mode        = sys.argv[1]
-	filesystem  = almasi.services.Filesystem
-	observation = patch.object(type(filesystem), '_watch', return_value=None) if mode == 'no_watch' else nullcontext()
+	root       = os.environ['EXPECTED_ROOT']
+	mode       = sys.argv[1]
+	filesystem = almasi.services.Filesystem
+	benchmark  = runpy.run_path(os.path.join(root, 'root/tests/_test_performance.py'))['TestPerformance']
+	ready      = threading.Event()
+	results    = {}
 
 	assert os.path.realpath(o.__path__) == os.path.join(root, 'root')
 	assert os.path.realpath(almasi.__lib_file__) == os.path.join(os.environ['EXPECTED_CORE'], 'almasi.py')
 
+	watch = {
+		'immediate': filesystem._watch,
+		'idle'     : idle_watch,
+		'deferred' : partial(deferred_watch, filesystem._watch, ready),
+		'no_watch' : skip_watch,
+	}[mode]
+
 	with tempfile.TemporaryDirectory(prefix='o_read_diagnostic_') as directory:
 		type(o).__app__ = SimpleNamespace(__lib_path__=directory)
 
-		with observation:
+		with patch.object(type(filesystem), '_watch', staticmethod(watch)):
 			o.start(tree_mode=False, multiprocess=False)
 			o.Timer.enabled = False
 			o.T.extend('APerfRun')
 			o.Timer.reset()
 
-			items   = o.List([1, 2, 3, 4, 5])
-			results = sample(items)
+			results['original_first'] = benchmark.trigger_list_getitem(1000) * 1000
+			items = o.List([1, 2, 3, 4, 5])
 
-			o.services.Memory.env.close()
+			try:
+				sample(items, results, 'initial')
+				sys._clear_type_cache()
+				sample(items, results, 'cleared')
+				time.sleep(.25)
+				sample(items, results, 'later')
+			finally:
+				ready.set()
+
+				for entry in filesystem._watchers.values():
+					entry['stop'].set()
+
+				for entry in filesystem._watchers.values():
+					entry['thread'].join(2)
+					assert not entry['thread'].is_alive()
+
+				o.services.Memory.env.close()
 
 	print(json.dumps(results))
 
