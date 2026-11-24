@@ -519,7 +519,7 @@ class TestInstance(o.Tester):
 			assert x.id in received.get(timeout=2)
 		finally:
 			if callback is not None:
-				callback.cancel()
+				callback()
 
 			cls._restore_runtime(state)
 
