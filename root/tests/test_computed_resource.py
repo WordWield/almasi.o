@@ -66,14 +66,14 @@ class TestComputedResource(o.Tester):
 			assert resource.read() is o.Undefined
 			assert events == [frozenset({item.id})]
 			assert second_events == events
-			second_handle.cancel()
+			resource.unsubscribe(second_handle)
 			assert resource in o.services.Sync._resources
 
 			with o.services.Tracker.track_reads(resource) as observed:
 				observed.value = item.count * 3
 
 			assert resource.read() == 12
-			handle.cancel()
+			resource.unsubscribe(handle)
 			assert resource not in o.services.Sync._resources
 		finally:
 			cls._restore_runtime(state)
@@ -91,7 +91,7 @@ class TestComputedResource(o.Tester):
 		assert resource.read() is None
 		assert resource.dependencies == frozenset()
 		assert o.services.Sync._resources[resource][2] == frozenset()
-		handle.cancel()
+		resource.unsubscribe(handle)
 
 	# An unchanged dependency scope must preserve the dispatch snapshot and index.
 	# ----------------------------------------------------------------------
@@ -115,7 +115,7 @@ class TestComputedResource(o.Tester):
 			assert sync._snapshot is snapshot
 			assert sync._resources[resource] is entry
 		finally:
-			handle.cancel()
+			resource.unsubscribe(handle)
 
 	# Replace observation scope only after successful new computation.
 	# ----------------------------------------------------------------------
@@ -151,7 +151,7 @@ class TestComputedResource(o.Tester):
 			o.services.Sync._dispatch(frozenset({second.id}))
 			assert resource.value is o.Undefined
 			assert events == [frozenset({second.id})]
-			handle.cancel()
+			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)
 
@@ -175,7 +175,7 @@ class TestComputedResource(o.Tester):
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset()
 			assert o.services.Sync._resources[resource][2] is None
-			handle.cancel()
+			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)
 
@@ -198,7 +198,7 @@ class TestComputedResource(o.Tester):
 
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset()
-			handle.cancel()
+			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)
 
@@ -227,7 +227,7 @@ class TestComputedResource(o.Tester):
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset({first.id})
 			assert o.services.Sync._resources[resource][2] == frozenset({first.id})
-			handle.cancel()
+			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)
 
@@ -244,7 +244,7 @@ class TestComputedResource(o.Tester):
 
 			assert resource.read() == 7
 			reference = weakref.ref(resource)
-			handle.cancel()
+			resource.unsubscribe(handle)
 			return reference
 
 		reference = observed_reference()

@@ -219,19 +219,19 @@ class Sync(o.Singleton):
 					partial(self.observe, identifiers=scope, local_only=local_only)
 				)
 
-				subscription = resource.subscribe(callback)
+				cancel = partial(resource.unsubscribe, resource.subscribe(callback))
 		else:
 			raise TypeError('local_only must be bool')
 
-		return subscription
+		return cancel
 
 	# Observe committed changes with their origin before asynchronous delivery.
 	# ----------------------------------------------------------------------
 	def watch_commits(self, callback):
 		with self._observation_lock:
-			subscription = self._commits.subscribe(callback)
+			cancel = partial(self._commits.unsubscribe, self._commits.subscribe(callback))
 
-		return subscription
+		return cancel
 
 	# Commit the value and its dependencies with no gap against publication.
 	# The source lock precedes the resource lock in both competing operations.

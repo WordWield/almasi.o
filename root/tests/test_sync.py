@@ -119,9 +119,9 @@ class TestSync(o.Tester):
 			assert received.empty() and forwarded.empty()
 		finally:
 			release.set()
-			blocker.cancel()
-			listener.cancel()
-			sender.cancel()
+			blocker()
+			listener()
+			sender()
 
 	# A new subscriber observes future writes, not old unobserved commits.
 	# ----------------------------------------------------------------------
@@ -135,7 +135,7 @@ class TestSync(o.Tester):
 			callback = sync.subscribe(received.put)
 			sync.publish_change([22])
 			assert received.get(timeout=2) == frozenset({22})
-			callback.cancel()
+			callback()
 			sync.publish_change([33])
 			sync.subscribe(received.put)
 			sync.publish_change([44])
@@ -328,7 +328,7 @@ class TestSync(o.Tester):
 		try:
 			sync.subscribe(global_q.put)
 			callback = sync.subscribe(watched, results.put)
-			assert isinstance(callback, o.Subscription)
+			assert callable(callback)
 
 			watched.clear()
 			watched.add(102)
@@ -338,7 +338,7 @@ class TestSync(o.Tester):
 			assert global_q.get(timeout=2) == frozenset({101})
 			assert results.get(timeout=2) == frozenset({101})
 
-			callback.cancel()
+			callback()
 			callback = sync.subscribe({102}, results.put)
 			pending.setdefault(804, []).append(101)
 			pending.setdefault(804, []).append(102)
@@ -369,7 +369,7 @@ class TestSync(o.Tester):
 		try:
 			sync.subscribe(global_q.put)
 			callback = sync.subscribe({121}, filtered.put)
-			callback.cancel()
+			callback()
 
 			pending.setdefault(805, []).append(121)
 			sync.publish_change(pending.pop(805), local=True)
@@ -393,7 +393,7 @@ class TestSync(o.Tester):
 
 		try:
 			callback = sync.subscribe(callback=results.put)
-			assert isinstance(callback, o.Subscription)
+			assert callable(callback)
 			pending.setdefault(807, []).append(141)
 			sync.publish_change(pending.pop(807), local=True)
 			assert results.get(timeout=2) == frozenset({141})
@@ -419,7 +419,7 @@ class TestSync(o.Tester):
 		callback = sync.subscribe(results.put)
 
 		try:
-			callback.cancel()
+			callback()
 			pending.setdefault(40, []).append(81)
 			sync.publish_change(pending.pop(40), local=True)
 
@@ -679,7 +679,7 @@ class TestSync(o.Tester):
 		second  = Queue()
 
 		def change_subscriptions(ids):
-			handle.cancel()
+			handle()
 			sync.subscribe(second.put)
 			first.put(ids)
 
@@ -759,7 +759,7 @@ class TestSync(o.Tester):
 			second = sync.subscribe({1002}, received.put)
 
 			assert first is not second
-			first.cancel()
+			first()
 			sync.publish_change([1001, 1002])
 			assert received.get(timeout=2) == frozenset({1002})
 			assert received.empty()
@@ -775,14 +775,14 @@ class TestSync(o.Tester):
 
 		try:
 			handle = sync.subscribe({2001}, forwarded.put, local_only=True)
-			handle.cancel()
+			handle()
 			handle = sync.subscribe({2002}, forwarded.put, local_only=True)
 			sync.publish_change([2001], local=True)
 			sync.publish_change([2002], local=False)
 			sync.publish_change([2002], local=True)
 			assert forwarded.get(timeout=2) == frozenset({2002})
 
-			handle.cancel()
+			handle()
 			sync.publish_change([2002], local=True)
 			assert forwarded.empty()
 		finally:
@@ -800,29 +800,27 @@ class TestSync(o.Tester):
 
 		try:
 			assert first is not second
-			assert first.resource is second.resource
-			assert first.resource is not local.resource
 			assert len(sync._resources) == 2
 
 			sync._dispatch(frozenset({7}), local=False)
 			assert events == [frozenset({7})] * 2
 
-			first.cancel()
+			first()
 			assert len(sync._resources) == 2
 			events.clear()
 
 			sync._dispatch(frozenset({8}))
 			assert events == [frozenset({8})] * 2
 
-			second.cancel()
+			second()
 			assert len(sync._resources) == 1
-			local.cancel()
+			local()
 			assert not sync._resources
 			assert not sync._by_id
 		finally:
-			first.cancel()
-			second.cancel()
-			local.cancel()
+			first()
+			second()
+			local()
 			cls._finish(sync)
 
 	# Preserve registration order and matching scope through the sparse index.
@@ -840,13 +838,13 @@ class TestSync(o.Tester):
 			sync._dispatch(frozenset({31, 7, 52}))
 			assert received == [frozenset({7}), frozenset({31}), frozenset({52})]
 
-			handles[31].cancel()
+			handles[31]()
 			received.clear()
 			sync._dispatch(frozenset({31, 7, 52}))
 			assert received == [frozenset({7}), frozenset({52})]
 		finally:
 			for handle in handles:
-				handle.cancel()
+				handle()
 
 			cls._finish(sync)
 

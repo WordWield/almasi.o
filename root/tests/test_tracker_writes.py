@@ -202,7 +202,7 @@ class TestTrackerWrites(o.Tester):
 					call([1602], True),
 				]
 			finally:
-				observation.cancel()
+				observation()
 		finally:
 			cls._restore_runtime(state)
 

@@ -131,7 +131,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 
 			assert echo is None
 		finally:
-			callback.cancel()
+			callback()
 
 			if original is None:
 				cache.pop(owner_id, None)
@@ -159,7 +159,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 			assert received.get(timeout=2) is None
 			assert changed == [owner_id]
 		finally:
-			callback.cancel()
+			callback()
 
 			if original is None:
 				cache.pop(owner_id, None)
@@ -188,7 +188,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 
 			assert notification is None
 		finally:
-			callback.cancel()
+			callback()
 			peer.close()
 
 

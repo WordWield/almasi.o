@@ -45,7 +45,18 @@ class TestPerformanceSyncOverhead(o.Tester):
 			sync.publish_change([DRAIN_ID])
 			assert done.wait(10), 'Sync worker did not drain'
 		finally:
-			callback.cancel()
+			cls._cancel(callback)
+
+	# Accept the master handle and the current cancellation callable in A/B runs.
+	# ----------------------------------------------------------------------
+	@staticmethod
+	def _cancel(handle, resource=None):
+		if callable(handle):
+			handle()
+		elif resource is not None and not hasattr(handle, 'cancel'):
+			resource.unsubscribe(handle)
+		else:
+			handle.cancel()
 
 	# Each sample runs in a fresh process with an independent LMDB store.
 	# ----------------------------------------------------------------------
@@ -111,7 +122,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 					release.set()
 
 				if callback is not None:
-					callback.cancel()
+					cls._cancel(callback)
 
 				if mode != 'stub':
 					cls._drain(sync)
@@ -154,7 +165,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 			result = (time.perf_counter_ns() - started) / (1000 * iterations)
 		finally:
 			for handle in handles:
-				handle.cancel()
+				cls._cancel(handle)
 
 		return result
 
@@ -189,7 +200,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 			refresh = (time.perf_counter_ns() - started) / (1000 * size)
 		finally:
 			for handle in handles:
-				handle.cancel()
+				cls._cancel(handle, resource)
 
 		return delivery, refresh
 

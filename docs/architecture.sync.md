@@ -75,16 +75,14 @@ updates only added and removed IDs.
 | `sync.subscribe(callback=callback)` | Same, explicit keyword |
 | `sync.subscribe({id1, id2}, callback)` | Observe selected owner IDs |
 | `sync.subscribe(callback, local_only=True)` | Transport-only local changes |
-| `subscription.cancel()` | Stop future delivery (idempotent, nonblocking) |
+| `cancel()` (returned by Sync.subscribe) | Stop future delivery (idempotent, nonblocking) |
 | `sync.publish_change(ids, local=False)` | Enqueue external invalidation |
 
 Raw `sync.subscribe()` reuses one notification-only Resource per identical
-immutable scope and origin filter. It returns a distinct `almasi.Subscription`
-handle for each listener. Delivery order is registration order within a
+immutable scope and origin filter. It returns a distinct cancellation callable for each listener. Delivery order is registration order within a
 resource and first-observed order between resources, not a global listener
 ordering across unrelated resources. A resource snapshots its listeners when
-notified. The handle contains
-only its resource and callback. Raw scope replacement is explicit: cancel the
+notified. The returned callable binds the resource and its opaque registration ID. Raw scope replacement is explicit: cancel the
 old handle and subscribe with the new scope. Computed resources instead replace
 their observed IDs automatically on successful recomputation.
 
@@ -122,7 +120,7 @@ Example of observing a computed resource:
 
 ~~~python
 resource = o.ComputedResource()
-subscription = resource.subscribe(on_change)
+subscription_id = resource.subscribe(on_change)
 
 try:
 	with o.services.Tracker.track_reads(resource) as computed:
@@ -130,7 +128,7 @@ try:
 
 	value = resource.read()
 finally:
-	subscription.cancel()
+	resource.unsubscribe(subscription_id)
 ~~~
 
 The tracked computation replaces the resource's dependency scope under

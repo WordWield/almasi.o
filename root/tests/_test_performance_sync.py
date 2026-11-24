@@ -62,7 +62,7 @@ class TestPerformanceSync(o.Tester):
 				else:
 					arrivals = Queue()
 					watched = set(range(1 << 60, (1 << 60) + latency_samples))
-					sync.subscribe(watched, arrivals.put)
+					cancel = sync.subscribe(watched, arrivals.put)
 
 				try:
 					for index in range(latency_samples):
@@ -85,7 +85,7 @@ class TestPerformanceSync(o.Tester):
 						reader.close()
 						peer.close()
 					else:
-						sync.unsubscribe(arrivals.put)
+						cancel()
 
 				result['delivery_latency'] = statistics.median(latencies)
 			else:
@@ -116,7 +116,7 @@ class TestPerformanceSync(o.Tester):
 			result['write_batch'] = (time.perf_counter_ns() - started) / (1000 * size)
 
 			if observer is not None:
-				sync.unsubscribe(observer)
+				observer()
 
 			memory.env.close()
 

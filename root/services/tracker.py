@@ -347,7 +347,7 @@ class Tracker(o.Singleton):
 		try:
 			yield writes
 		finally:
-			observation.cancel()
+			observation()
 
 	# Observe a supplied resource or create a fresh one for this scope.
 	# ----------------------------------------------------------------------
@@ -376,6 +376,6 @@ class Tracker(o.Singleton):
 				self._exit(reads)
 		finally:
 			if observation is not None:
-				observation.cancel()
+				observation()
 
 			resource._end()
