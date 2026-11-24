@@ -81,8 +81,11 @@ changed scope updates only added and removed IDs.
 Raw `sync.subscribe()` reuses one notification-only Resource per identical
 immutable scope and origin filter. It returns a distinct cancellation callable for each listener. Delivery order is registration order within a
 resource and first-observed order between resources, not a global listener
-ordering across unrelated resources. A resource snapshots its listeners when
-notified. The returned callable binds the resource and its opaque registration ID. Raw scope replacement is explicit: cancel the
+ordering across unrelated resources. A resource snapshots its listeners at the start of its own update, not at
+the start of Sync dispatch. A listener added to an already selected resource
+before its update may receive the current invalidation. A listener added during
+that resource's own update waits for the next update. Resources newly added to
+the index during dispatch are not included in the current resource snapshot. The returned callable binds the resource and its opaque registration ID. Raw scope replacement is explicit: cancel the
 old handle and subscribe with the new scope. Computed resources instead replace
 their observed IDs automatically on successful recomputation.
 
@@ -112,8 +115,10 @@ publish a completed resource value. These calls are reserved for
 
 Cross-thread consumers hand off to their own event loop. Dispatch
 uses the resource scope snapshot from the beginning of each batch. A scope
-replacement takes effect on later batches. `cancel()` does not wait for a callback already
-running; subsequent deliveries skip canceled registrations. Callbacks can
+replacement takes effect on later batches. `cancel()` does not wait for a callback already selected for invocation or
+running. A canceled registration is skipped if it is removed before its
+callback is looked up, including during the current resource update or a
+preceding resource's callback. Callbacks can
 register or cancel subscriptions reentrantly. One callback's exception is
 logged without suppressing delivery to the others.
 

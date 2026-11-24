@@ -1,17 +1,25 @@
 # ==============================================================================
 # TEST SYNC
 # ==============================================================================
+# PURPOSE:
 # Verify committed local/remote delivery, isolation, and LMDB integration.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Assertions for Sync delivery and transaction integration.
+# Delegates: Notification matching and listener delivery to production code.
 # ==============================================================================
 
 import threading
 
 from concurrent.futures import ThreadPoolExecutor
+from functools          import partial
 from queue              import Empty, Queue
 from types              import SimpleNamespace
 from unittest.mock      import patch
 
 from almasi import o
+
+
 class TestSync(o.Tester):
 
 	# ======================================================================
@@ -48,6 +56,13 @@ class TestSync(o.Tester):
 
 		if sync._worker is not threading.current_thread():
 			sync._worker.join()
+
+	# Replace a listener while an earlier resource is delivering its update.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def _replace_listener(cls, sync, cancel, received, changed):
+		cancel()
+		sync.subscribe({2}, received.append)
 
 	# ======================================================================
 	# PUBLIC METHODS
@@ -669,7 +684,7 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 	# Callbacks may change subscriptions during delivery without deadlock.
-	# Only subscribers registered for the next dispatch receive it.
+	# A listener added to the same resource waits for its next update.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_subscriber_reentrancy(cls):
@@ -699,6 +714,39 @@ class TestSync(o.Tester):
 				unexpected = None
 
 			assert unexpected is None
+		finally:
+			cls._finish(sync)
+
+	# Later resources use their live listeners, excluding canceled registrations.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_reentrant_cross_resource_subscriptions(cls):
+		sync     = cls._sync()
+		existing = []
+		canceled = []
+		added    = []
+
+		try:
+			# Register the earlier group before the later group.
+			# ----------------------------------------------------------------------
+			actions = []
+			sync.subscribe({1}, actions.append)
+			sync.subscribe({2}, existing.append)
+			cancel = sync.subscribe({2}, canceled.append)
+			sync.subscribe({1}, partial(cls._replace_listener, sync, cancel, added))
+
+			sync._dispatch(frozenset({1, 2}))
+
+			assert actions  == [frozenset({1})]
+			assert existing == [frozenset({2})]
+			assert canceled == []
+			assert added    == [frozenset({2})]
+
+			sync._dispatch(frozenset({2}))
+
+			assert existing == [frozenset({2})] * 2
+			assert canceled == []
+			assert added    == [frozenset({2})] * 2
 		finally:
 			cls._finish(sync)
 
