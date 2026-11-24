@@ -57,9 +57,6 @@ class Sync(o.Singleton):
 			for identifier in after if before is None else after - before:
 				self._by_id.setdefault(identifier, set()).add(identity)
 
-	# Snapshot scopes for broad and dense invalidations.
-	# ----------------------------------------------------------------------
-	def _refresh(self):
 		self._snapshot = tuple(self._resources.values())
 
 	# Deliver through the sparse/dense index without rebuilding matched entries.
@@ -181,32 +178,37 @@ class Sync(o.Singleton):
 	def resource(self):
 		return o.ComputedResource()
 
-	# Observe a resource once, regardless of its number of listeners.
+	# Reconcile registration and dependency changes through the same index.
 	# ----------------------------------------------------------------------
 	def observe(
 		self,
 		resource,
-		identifiers = None,
+		identifiers = o.Undefined,
 		local_only  = False
 	):
 		with self._observation_lock:
-			if isinstance(resource, o.ComputedResource):
-				identity      = resource
-				is_unresolved = resource.value is o.Undefined and not resource.dependencies
-				identifiers   = None if is_unresolved else resource.dependencies
-			else:
-				identity = (identifiers, local_only)
+			is_computed = isinstance(resource, o.ComputedResource)
+			identity    = resource if is_computed else (identifiers, local_only)
+			entry       = self._resources.get(identity)
 
 			if resource.is_subscribed():
-				if identity not in self._resources:
+				if entry is None:
+					if is_computed and identifiers is o.Undefined:
+						is_unresolved = resource.value is o.Undefined and not resource.dependencies
+						identifiers   = None if is_unresolved else resource.dependencies
+
 					self._resources[identity] = (self._next_order, resource, identifiers, local_only)
 					self._next_order += 1
 					self._reindex(identity, frozenset(), identifiers)
-					self._refresh()
-			elif identity in self._resources and self._resources[identity][1] is resource:
-				_, _, before, _ = self._resources.pop(identity)
-				self._reindex(identity, before, frozenset())
-				self._refresh()
+				elif identifiers is not o.Undefined:
+					order, _, before, origin = entry
+
+					if before != identifiers:
+						self._resources[identity] = (order, resource, identifiers, origin)
+						self._reindex(identity, before, identifiers)
+			elif entry is not None and entry[1] is resource:
+				del self._resources[identity]
+				self._reindex(identity, entry[2], frozenset())
 
 	# Subscribe to raw owner-ID invalidations without creating a computed value.
 	# ----------------------------------------------------------------------
@@ -253,18 +255,6 @@ class Sync(o.Singleton):
 	def commit_resource(self, resource, identifiers):
 		with self._observation_lock:
 			resource._publish(identifiers, self)
-
-	# Replace the observed resource scope without touching its listeners.
-	# ----------------------------------------------------------------------
-	def update_resource(self, resource, identifiers):
-		with self._observation_lock:
-			if resource in self._resources:
-				order, _, before, local_only = self._resources[resource]
-
-				if before != identifiers:
-					self._reindex(resource, before, identifiers)
-					self._resources[resource] = (order, resource, identifiers, local_only)
-					self._refresh()
 
 	# Confirm commits synchronously before queuing asynchronous invalidations.
 	# ----------------------------------------------------------------------

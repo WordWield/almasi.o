@@ -93,7 +93,7 @@ class ComputedResource(o.Resource):
 			changes = self._observed_changes
 
 			if changes is not None and not changes & identifiers:
-				sync.update_resource(self, identifiers)
+				sync.observe(self, identifiers)
 				self.dependencies = identifiers
 				self._value       = self._candidate
 			else:
