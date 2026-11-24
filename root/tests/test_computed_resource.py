@@ -28,9 +28,9 @@ class TestComputedResource(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_resource_module_symmetry(cls):
-		assert o.ComputedResource.__bases__ == (o.Resource,)
+		assert o.resources.Computed.__bases__ == (o.Resource,)
 		assert o.Resource.__bases__ == (o.Module,)
-		assert issubclass(o.ComputedResource, o.Module)
+		assert issubclass(o.resources.Computed, o.Module)
 
 	# Keep a stable resource while filling and invalidating its value.
 	# ----------------------------------------------------------------------
@@ -41,7 +41,7 @@ class TestComputedResource(o.Tester):
 		try:
 			Model    = o.T.extend('ComputedObserved', count=int)
 			item     = Model(count=4)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			events   = []
 			handle   = resource.subscribe(events.append)
 
@@ -53,7 +53,7 @@ class TestComputedResource(o.Tester):
 				assert resource.read() is o.Undefined
 
 			assert resource.read() == 8
-			assert o.ComputedResource.subscribe is o.Resource.subscribe
+			assert o.resources.Computed.subscribe is o.Resource.subscribe
 
 			second_events = []
 			second_handle = resource.subscribe(second_events.append)
@@ -82,7 +82,7 @@ class TestComputedResource(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_null_result_and_empty_dependency_scope(cls):
-		resource = o.ComputedResource()
+		resource = o.resources.Computed()
 		handle   = resource.subscribe(lambda changed: None)
 
 		with o.services.Tracker.track_reads(resource) as observed:
@@ -97,7 +97,7 @@ class TestComputedResource(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_unchanged_dependencies_preserve_index(cls):
-		resource = o.ComputedResource()
+		resource = o.resources.Computed()
 		handle   = resource.subscribe(lambda changed: None)
 		sync     = o.services.Sync
 
@@ -127,7 +127,7 @@ class TestComputedResource(o.Tester):
 			Model    = o.T.extend('ComputedScopes', count=int)
 			first    = Model(count=1)
 			second   = Model(count=2)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			events   = []
 			handle   = resource.subscribe(events.append)
 
@@ -164,7 +164,7 @@ class TestComputedResource(o.Tester):
 		try:
 			Model    = o.T.extend('ComputedConflict', count=int)
 			item     = Model(count=1)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			handle   = resource.subscribe(lambda changed: None)
 
 			with TestCase().assertRaisesRegex(RuntimeError, 'changed during read'):
@@ -188,7 +188,7 @@ class TestComputedResource(o.Tester):
 		try:
 			Model    = o.T.extend('ComputedCommittedConflict', count=int)
 			item     = Model(count=1)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			handle   = resource.subscribe(lambda changed: None)
 
 			with TestCase().assertRaisesRegex(RuntimeError, 'changed during read'):
@@ -212,7 +212,7 @@ class TestComputedResource(o.Tester):
 			Model    = o.T.extend('ComputedFailure', count=int)
 			first    = Model(count=1)
 			second   = Model(count=2)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			handle   = resource.subscribe(lambda changed: None)
 
 			with o.services.Tracker.track_reads(resource) as observed:
@@ -236,7 +236,7 @@ class TestComputedResource(o.Tester):
 	@classmethod
 	def test_final_cancel_releases_resource(cls):
 		def observed_reference():
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			handle   = resource.subscribe(lambda changed: None)
 
 			with o.services.Tracker.track_reads(resource) as observed:

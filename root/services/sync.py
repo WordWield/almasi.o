@@ -176,7 +176,7 @@ class Sync(o.Singleton):
 	# Create a computed resource without assigning external identity.
 	# ----------------------------------------------------------------------
 	def resource(self):
-		return o.ComputedResource()
+		return o.resources.Computed()
 
 	# Reconcile registration and dependency changes through the same index.
 	# ----------------------------------------------------------------------
@@ -187,7 +187,7 @@ class Sync(o.Singleton):
 		local_only  = False
 	):
 		with self._observation_lock:
-			is_computed = isinstance(resource, o.ComputedResource)
+			is_computed = isinstance(resource, o.resources.Computed)
 			identity    = resource if is_computed else (identifiers, local_only)
 			entry       = self._resources.get(identity)
 

@@ -19,7 +19,7 @@ Three separate owners provide reactive state:
    It neither intercepts writes nor registers subscribers.
 2. **Memory/Zone** persist changes and supply the affected owner IDs to
    **Sync**, independently of Tracker scopes.
-3. **ComputedResource** owns the cached computation, its dependencies and
+3. **Computed** owns the cached computation, its dependencies and
    subscriptions. The consumer owns refetch policy and network delivery.
 
 The necessary correctness condition within one ontology world is:
@@ -60,7 +60,7 @@ graph for a new world), independent of notifications. See
 
 Sync indexes observed resources, not listener registrations. O implements
 indexed owner-ID matching in `_dispatch()`; its worker and transport
-remain O-owned. ComputedResource inherits its listener registry from Resource.
+remain O-owned. Computed inherits its listener registry from Resource.
 Sync observes each computed resource once while it has listeners. It calls
 `resource.update(matching_ids)` once per matching batch; the resource clears
 its cached value before notifying its listeners. The final cancellation
@@ -107,7 +107,7 @@ worker delivery. Its callbacks receive one event tuple `(ids, local)`. The commi
 exists only while observed; publication does not call an empty resource. `Sync.commit_resource(resource, identifiers)` uses the same source
 lock to atomically validate observed changes, replace dependency scopes, and
 publish a completed resource value. These calls are reserved for
-`Tracker.track_reads(ComputedResource)`; ordinary clients should use
+`Tracker.track_reads(resource)`; ordinary clients should use
 `subscribe()` and receive worker-delivered hints as before.
 
 Cross-thread consumers hand off to their own event loop. Dispatch
@@ -120,7 +120,7 @@ logged without suppressing delivery to the others.
 Example of observing a computed resource:
 
 ~~~python
-resource = o.ComputedResource()
+resource = o.resources.Computed()
 subscription_id = resource.subscribe(on_change)
 
 try:

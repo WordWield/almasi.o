@@ -5,7 +5,7 @@ on the generic Almasi Resource contract are verified separately.
 
 ## Meaning and responsibility
 
-`o.ComputedResource(o.Resource)` inherits `Module` from the shared Almasi
+`o.resources.Computed(o.Resource)` inherits `Module` from the shared Almasi
 `Resource`, without another direct base. Its stable
 `id` is supplied by the caller, and its `value` is initially
 `o.Undefined`. `read()` returns that value and never invokes the code that
@@ -18,11 +18,11 @@ the ordinary Python code that executes inside its read scope.
 ## Observed computation
 
 `o.services.Tracker.track_reads(list)` retains its existing behavior.
-Passing a `ComputedResource` instead establishes an observation for
+Passing a `o.resources.Computed` instead establishes an observation for
 that existing resource and yields it:
 
 ~~~python
-resource = o.ComputedResource('server-supplied-identity')
+resource = o.resources.Computed()
 
 with o.services.Tracker.track_reads(resource) as observed:
 	observed.value = some_o_object.value
@@ -55,7 +55,7 @@ linearizability remains unproven without a cross-process validation mechanism.
 
 ## Subscription source
 
-`ComputedResource` inherits `Resource.subscribe(callback)` and owns its
+`o.resources.Computed` inherits `Resource.subscribe(callback)` and owns its
 listeners. Sync indexes each actively observed resource once. A resource
 without a computed dependency scope starts with broad observation. Successful
 recomputation replaces that resource's scope atomically under the publication

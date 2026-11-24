@@ -174,7 +174,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 	@classmethod
 	def _measure_computed(cls, sync, size):
 		item     = o.List([1])
-		resource = o.ComputedResource()
+		resource = sync.resource()
 		handles  = [resource.subscribe(cls._ignore) for index in range(32)]
 
 		try:

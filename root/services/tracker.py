@@ -355,7 +355,7 @@ class Tracker(o.Singleton):
 	# ----------------------------------------------------------------------
 	@contextmanager
 	def track_reads(self, resource=None):
-		resource    = o.ComputedResource() if resource is None else resource
+		resource    = o.resources.Computed() if resource is None else resource
 		reads       = []
 		observation = None
 

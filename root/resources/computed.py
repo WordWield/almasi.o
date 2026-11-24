@@ -1,5 +1,5 @@
 # ==============================================================================
-# COMPUTED RESOURCE
+# COMPUTED
 # ==============================================================================
 # PURPOSE:
 # Retain a computed value and its observed O dependency scope.
@@ -14,7 +14,7 @@ import threading
 from almasi import o
 
 
-class ComputedResource(o.Resource):
+class Computed(o.Resource):
 
 	# ==========================================================================
 	# FRAMEWORK METHODS
