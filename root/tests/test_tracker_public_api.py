@@ -39,7 +39,7 @@ class TestTrackerPublicApi(o.Tester):
 		try:
 			yield received
 		finally:
-			subscription.cancel()
+			subscription()
 
 	# Wait until all expected owners have been published by Sync.
 	# ----------------------------------------------------------------------
