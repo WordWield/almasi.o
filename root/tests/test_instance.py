@@ -509,7 +509,7 @@ class TestInstance(o.Tester):
 			while x.id not in checkpoint.get(timeout=2):
 				pass
 
-			barrier.cancel()
+			barrier()
 			callback = sync.subscribe({x.id}, received.put)
 
 			x.foo = 'b'
