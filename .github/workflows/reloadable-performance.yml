@@ -110,7 +110,7 @@ jobs:
           	file.write(report + '\n')
           PY
 
-      - name: Isolate chained namespace attribute access
+      - name: Test Filesystem namespace alias and dictionary layout
         run: |
           python - <<'PY'
           import json
@@ -126,7 +126,7 @@ jobs:
 
           for round_index in range(5):
               revisions = ('before', 'after') if round_index % 2 == 0 else ('after', 'before')
-              modes = ('immediate', 'no_watch')
+              modes = ('immediate', 'namespace_alias')
 
               if round_index % 2:
                   modes = tuple(reversed(modes))
@@ -154,7 +154,7 @@ jobs:
 
           rows = ['| Case | Master | PR | Delta |', '|---|---:|---:|---:|']
 
-          for mode in ('immediate', 'no_watch'):
+          for mode in ('immediate', 'namespace_alias'):
               for case in samples[(mode, 'before')][0]:
                   before = statistics.median(x[case] for x in samples[(mode, 'before')])
                   after = statistics.median(x[case] for x in samples[(mode, 'after')])
