@@ -40,22 +40,22 @@ class Sync(o.Singleton):
 
 	# Keep one index entry per observed resource and identifier.
 	# ----------------------------------------------------------------------
-	def _reindex(self, resource, before, after):
+	def _reindex(self, identity, before, after):
 		if before is None:
-			self._broad.discard(resource)
+			self._broad.discard(identity)
 		else:
 			for identifier in before if after is None else before - after:
 				bucket = self._by_id[identifier]
-				bucket.discard(resource)
+				bucket.discard(identity)
 
 				if not bucket:
 					del self._by_id[identifier]
 
 		if after is None:
-			self._broad.add(resource)
+			self._broad.add(identity)
 		else:
 			for identifier in after if before is None else after - before:
-				self._by_id.setdefault(identifier, set()).add(resource)
+				self._by_id.setdefault(identifier, set()).add(identity)
 
 	# Snapshot scopes for broad and dense invalidations.
 	# ----------------------------------------------------------------------
@@ -83,7 +83,7 @@ class Sync(o.Singleton):
 					for identifier in changes:
 						matched.update(self._by_id.get(identifier, ()))
 
-					candidates = sorted(self._resources[resource] for resource in matched)
+					candidates = sorted(self._resources[identity] for identity in matched)
 		else:
 			candidates = ()
 
@@ -94,8 +94,7 @@ class Sync(o.Singleton):
 				)
 
 				if changes is None or matching:
-					if resource in self._resources:
-						resource.update(matching)
+					resource.update(matching)
 
 	# One delivery point for local and external invalidations.
 	# ----------------------------------------------------------------------
@@ -180,19 +179,22 @@ class Sync(o.Singleton):
 		local_only  = False
 	):
 		with self._observation_lock:
-			if resource.is_subscribed():
-				if resource not in self._resources:
-					if isinstance(resource, o.ComputedResource):
-						is_unresolved = resource.value is o.Undefined and not resource.dependencies
-						identifiers   = None if is_unresolved else resource.dependencies
+			if isinstance(resource, o.ComputedResource):
+				identity      = resource
+				is_unresolved = resource.value is o.Undefined and not resource.dependencies
+				identifiers   = None if is_unresolved else resource.dependencies
+			else:
+				identity = (identifiers, local_only)
 
-					self._resources[resource] = (self._next_order, resource, identifiers, local_only)
+			if resource.is_subscribed():
+				if identity not in self._resources:
+					self._resources[identity] = (self._next_order, resource, identifiers, local_only)
 					self._next_order += 1
-					self._reindex(resource, frozenset(), identifiers)
+					self._reindex(identity, frozenset(), identifiers)
 					self._refresh()
-			elif resource in self._resources:
-				_, _, before, _ = self._resources.pop(resource)
-				self._reindex(resource, before, frozenset())
+			elif identity in self._resources and self._resources[identity][1] is resource:
+				_, _, before, _ = self._resources.pop(identity)
+				self._reindex(identity, before, frozenset())
 				self._refresh()
 
 	# Subscribe to raw owner-ID invalidations without creating a computed value.
@@ -208,9 +210,16 @@ class Sync(o.Singleton):
 				callback = ids
 				ids      = None
 
-			scope        = self._scope(ids)
-			resource     = o.Resource(partial(self.observe, identifiers=scope, local_only=local_only))
-			subscription = resource.subscribe(callback)
+			scope    = self._scope(ids)
+			identity = (scope, local_only)
+
+			with self._observation_lock:
+				entry    = self._resources.get(identity)
+				resource = entry[1] if entry is not None else o.Resource(
+					partial(self.observe, identifiers=scope, local_only=local_only)
+				)
+
+				subscription = resource.subscribe(callback)
 		else:
 			raise TypeError('local_only must be bool')
 
@@ -247,7 +256,8 @@ class Sync(o.Singleton):
 	# ----------------------------------------------------------------------
 	def publish_change(self, ids, local=True):
 		with self._observation_lock:
-			self._commits.update(ids, local)
+			if self._commits.is_subscribed():
+				self._commits.update(ids, local)
 
 			if not local or self._resources:
 				self._queue.put((ids, local))

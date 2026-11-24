@@ -788,6 +788,43 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 
+	# Equivalent raw observations share one source without sharing handles.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_shared_raw_observation(cls):
+		sync   = cls._sync()
+		events = []
+		first  = sync.subscribe({7, 8}, events.append)
+		second = sync.subscribe({8, 7}, events.append)
+		local  = sync.subscribe({7, 8}, events.append, local_only=True)
+
+		try:
+			assert first is not second
+			assert first.resource is second.resource
+			assert first.resource is not local.resource
+			assert len(sync._resources) == 2
+
+			sync._dispatch(frozenset({7}), local=False)
+			assert events == [frozenset({7})] * 2
+
+			first.cancel()
+			assert len(sync._resources) == 2
+			events.clear()
+
+			sync._dispatch(frozenset({8}))
+			assert events == [frozenset({8})] * 2
+
+			second.cancel()
+			assert len(sync._resources) == 1
+			local.cancel()
+			assert not sync._resources
+			assert not sync._by_id
+		finally:
+			first.cancel()
+			second.cancel()
+			local.cancel()
+			cls._finish(sync)
+
 	# Preserve registration order and matching scope through the sparse index.
 	# ----------------------------------------------------------------------
 	@classmethod

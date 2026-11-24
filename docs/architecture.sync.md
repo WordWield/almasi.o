@@ -78,8 +78,12 @@ updates only added and removed IDs.
 | `subscription.cancel()` | Stop future delivery (idempotent, nonblocking) |
 | `sync.publish_change(ids, local=False)` | Enqueue external invalidation |
 
-Each raw `sync.subscribe()` creates a notification-only Resource with that
-scope and returns a distinct `almasi.Subscription` handle. The handle contains
+Raw `sync.subscribe()` reuses one notification-only Resource per identical
+immutable scope and origin filter. It returns a distinct `almasi.Subscription`
+handle for each listener. Delivery order is registration order within a
+resource and first-observed order between resources, not a global listener
+ordering across unrelated resources. A resource snapshots its listeners when
+notified. The handle contains
 only its resource and callback. Raw scope replacement is explicit: cancel the
 old handle and subscribe with the new scope. Computed resources instead replace
 their observed IDs automatically on successful recomputation.
