@@ -183,7 +183,7 @@ jobs:
               stream.write(report + '\n')
           PY
 
-      - name: Isolate startup observer cost from the first List read
+      - name: Measure List reads with separated CPU affinity
         run: |
           python - <<'PY'
           import json
@@ -199,7 +199,7 @@ jobs:
 
           for round_index in range(7):
               revisions = ('before', 'after') if round_index % 2 == 0 else ('after', 'before')
-              modes = ('immediate', 'settled', 'no_watch')
+              modes = ('immediate', 'no_watch')
 
               if round_index % 2:
                   modes = tuple(reversed(modes))
@@ -224,7 +224,7 @@ jobs:
 
           rows = ['| Case | Master | PR | Delta |', '|---|---:|---:|---:|']
 
-          for mode in ('immediate', 'settled', 'no_watch'):
+          for mode in ('immediate', 'no_watch'):
               for case in samples[(mode, 'before')][0]:
                   before = statistics.median(x[case] for x in samples[(mode, 'before')])
                   after = statistics.median(x[case] for x in samples[(mode, 'after')])

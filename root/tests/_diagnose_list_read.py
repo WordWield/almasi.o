@@ -1,7 +1,7 @@
 # ==============================================================================
 # LIST READ DIAGNOSTIC
 # ==============================================================================
-# Compare first List reads before and after filesystem observer startup.
+# Separate the List read path from background observer CPU placement.
 # ==============================================================================
 
 import json
@@ -10,6 +10,7 @@ import runpy
 import statistics
 import sys
 import tempfile
+import threading
 import time
 
 from contextlib    import nullcontext
@@ -37,18 +38,45 @@ def measure(items, size):
 	return elapsed, cpu, other
 
 
+# Record repeated measurements under the current CPU placement.
+# ------------------------------------------------------------------------------
+def sample(items, results, phase):
+	samples = [measure(items, 100000) for _ in range(3)]
+
+	results[phase + '_wall']      = statistics.median(sample[0] for sample in samples)
+	results[phase + '_cpu']       = statistics.median(sample[1] for sample in samples)
+	results[phase + '_other_cpu'] = statistics.mean(sample[2] for sample in samples)
+
+
+# Keep the reader on one CPU and move every other live OS thread off it.
+# ------------------------------------------------------------------------------
+def separate_threads(cpus):
+	reader = threading.get_native_id()
+	cpu    = min(cpus)
+
+	for name in os.listdir('/proc/self/task'):
+		thread = int(name)
+
+		if thread != reader:
+			os.sched_setaffinity(thread, cpus - {cpu})
+
+	os.sched_setaffinity(reader, {cpu})
+
+
 # Compare independent startup conditions without changing the List read path.
 # ------------------------------------------------------------------------------
 def run():
 	root       = os.environ['EXPECTED_ROOT']
 	mode       = sys.argv[1]
+	cpus       = os.sched_getaffinity(0)
 	filesystem = almasi.services.Filesystem
 	benchmark  = runpy.run_path(os.path.join(root, 'root/tests/_test_performance.py'))['TestPerformance']
 	results    = {}
 
 	assert os.path.realpath(o.__path__) == os.path.join(root, 'root')
 	assert os.path.realpath(almasi.__lib_file__) == os.path.join(os.environ['EXPECTED_CORE'], 'almasi.py')
-	assert mode in ('immediate', 'settled', 'no_watch')
+	assert mode in ('immediate', 'no_watch')
+	assert len(cpus) > 1
 
 	observation = patch.object(type(filesystem), '_watch', return_value=None) if mode == 'no_watch' else nullcontext()
 
@@ -61,22 +89,26 @@ def run():
 			o.T.extend('APerfRun')
 			o.Timer.reset()
 
-			if mode == 'settled':
-				time.sleep(.25)
-
 			if mode == 'no_watch':
 				assert not any(entry['thread'].is_alive() for entry in filesystem._watchers.values())
 
 			results['original_first']  = benchmark.trigger_list_getitem(1000) * 1000
 			results['original_second'] = benchmark.trigger_list_getitem(1000) * 1000
 
-			items   = o.List([1, 2, 3, 4, 5])
-			samples = [measure(items, 100000) for _ in range(3)]
+			items = o.List([1, 2, 3, 4, 5])
+			sample(items, results, 'warm')
 
-			results['warm_wall']  = statistics.median(sample[0] for sample in samples)
-			results['warm_cpu']   = statistics.median(sample[1] for sample in samples)
-			results['other_cpu']  = statistics.mean(sample[2] for sample in samples)
-			results['observers'] = sum(entry['thread'].is_alive() for entry in filesystem._watchers.values())
+			separate_threads(cpus)
+			sample(items, results, 'pinned')
+
+			for entry in filesystem._watchers.values():
+				entry['stop'].set()
+
+			for entry in filesystem._watchers.values():
+				entry['thread'].join(2)
+				assert not entry['thread'].is_alive()
+
+			sample(items, results, 'stopped')
 
 			o.services.Memory.env.close()
 
