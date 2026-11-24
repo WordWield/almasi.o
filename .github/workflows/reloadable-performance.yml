@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: WordWield/almasi
-          ref: master
+          ref: 4482d2286ada0400db2fdfe6a3089684968bdcdd
           path: almasi
 
       - name: Checkout Almasi compatible with O master baseline
@@ -46,71 +46,7 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/before" "$RUNNER_TEMP/before/almasi.o"
           ln -s "$GITHUB_WORKSPACE/after" "$RUNNER_TEMP/after/almasi.o"
 
-      - name: Benchmark baseline and PR with declaration included
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import statistics
-          import subprocess
-          import sys
-
-          def measure(revision):
-          	root = os.path.join(os.environ['GITHUB_WORKSPACE'], revision)
-          	env  = dict(os.environ)
-          	almasi_path = 'almasi_before' if revision == 'before' else 'almasi'
-          	almasi_root = os.path.join(os.environ['GITHUB_WORKSPACE'], almasi_path)
-          	env['PYTHONPATH'] = almasi_root
-          	env['ALMASI_PATH'] = os.path.join(os.environ['RUNNER_TEMP'], revision)
-          	runner = os.path.join(root, 'root/tests/_test_performance.py')
-
-          	completed = subprocess.run(
-          		[sys.executable, runner, '--size', '1000', '--workload', 'expanded',
-          		 '--_mode', 'graph', '--_json'],
-          		cwd            = root,
-          		env            = env,
-          		capture_output = True,
-          		text           = True,
-          		check          = True,
-          	)
-          	return json.loads(completed.stdout.strip().splitlines()[-1])
-
-          samples = {'before': [], 'after': []}
-
-          for round_index in range(5):
-          	order = ['before', 'after'] if round_index % 2 == 0 else ['after', 'before']
-          	for revision in order:
-          		print(f'Round {round_index + 1}: {revision}', flush=True)
-          		samples[revision].append(measure(revision))
-
-          operations = list(samples['before'][0])
-          assert 'define' in operations, 'Declaration workload missing'
-          assert operations == list(samples['after'][0]), 'Benchmark cases differ'
-
-          rows = [
-          	'| Operation | Before (us/op) | After (us/op) | Delta |',
-          	'|---|---:|---:|---:|',
-          ]
-
-          for operation in operations:
-          	before = statistics.median([run[operation] for run in samples['before']])
-          	after  = statistics.median([run[operation] for run in samples['after']])
-          	delta  = (after / before - 1) * 100
-          	rows.append(f'| {operation} | {before:.3f} | {after:.3f} | {delta:+.1f}% |')
-
-          report = '\n'.join([
-          	'## O ReloadableModule performance',
-          	'Python 3.12; 5 alternating rounds, 1000 iterations, isolated LMDB per run.',
-          	'Lower is faster; medians in microseconds per operation.',
-          	*rows,
-          ])
-          print(report, flush=True)
-
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as file:
-          	file.write(report + '\n')
-          PY
-
-      - name: Check native namespace reads after invalidation
+      - name: Compare complete benchmarks and namespace candidates
         run: |
           python - <<'PY'
           import json
@@ -122,22 +58,40 @@ jobs:
 
           workspace = os.environ['GITHUB_WORKSPACE']
           temporary = os.environ['RUNNER_TEMP']
-          candidate = os.path.join(temporary, 'almasi_native_attributes')
-          shutil.copytree(os.path.join(workspace, 'almasi'), candidate, ignore=shutil.ignore_patterns('.git', '__pycache__'))
-
-          directory = os.path.join(candidate, 'lib/directory.py')
-          with open(directory) as stream:
-              code = stream.read()
-          old = 'self.__dict__[name] = result'
-          assert code.count(old) == 1
-          with open(directory, 'w') as stream:
-              stream.write(code.replace(old, 'object.__setattr__(self, name, result)'))
-
+          core = os.path.join(workspace, 'almasi')
           variants = {
               'baseline': ('before', os.path.join(workspace, 'almasi_before')),
-              'current': ('after', os.path.join(workspace, 'almasi')),
-              'native': ('after', candidate),
+              'current': ('after', core),
           }
+
+          for name in ('native', 'native_all'):
+              candidate = os.path.join(temporary, name)
+              shutil.copytree(core, candidate, ignore=shutil.ignore_patterns('.git', '__pycache__'))
+              paths = ['lib/directory.py'] if name == 'native' else ['lib/directory.py', 'almasi.py']
+              for path in paths:
+                  path = os.path.join(candidate, path)
+                  with open(path) as stream:
+                      code = stream.read()
+                  old = 'self.__dict__[name] = result'
+                  assert code.count(old) == 1
+                  with open(path, 'w') as stream:
+                      stream.write(code.replace(old, 'object.__setattr__(self, name, result)'))
+              if name == 'native_all':
+                  path = os.path.join(candidate, 'lib/directory.py')
+                  with open(path) as stream:
+                      code = stream.read()
+                  old = 'face.__dict__.pop(name, None)'
+                  assert code.count(old) == 2
+                  # Keep native attribute storage through cache invalidation.
+                  code = code.replace('face.__dict__.pop(name, None)', 'self._evict_attribute(face, name)')
+                  anchor = '\t# Invalidate a changed file in every live inherited namespace face.'
+                  assert anchor in code
+                  method = '\t# Remove a cached native attribute.\n\t# ----------------------------------------------------------------------\n\t@staticmethod\n\tdef _evict_attribute(face, name):\n\t\ttry:\n\t\t\tobject.__delattr__(face, name)\n\t\texcept AttributeError:\n\t\t\treturn\n\n'
+                  code = code.replace(anchor, method + anchor)
+                  with open(path, 'w') as stream:
+                      stream.write(code)
+              variants[name] = ('after', candidate)
+
           samples = {name: [] for name in variants}
           script = os.path.join(workspace, 'after/root/tests/_diagnose_list_read.py')
 
@@ -154,18 +108,32 @@ jobs:
                       'EXPECTED_CORE': core,
                       'PYTHONHASHSEED': str(round_index),
                   }
-                  completed = subprocess.run([sys.executable, script], cwd=root, env=env, capture_output=True, text=True, check=True)
-                  result = json.loads(completed.stdout.strip().splitlines()[-1])
+                  benchmark = os.path.join(root, 'root/tests/_test_performance.py')
+                  commands = (
+                      ([sys.executable, benchmark, '--size', '1000', '--workload', 'expanded', '--_mode', 'graph', '--_json'], 'full/'),
+                      ([sys.executable, script], 'diagnostic/'),
+                  )
+                  result = {}
+                  for command, prefix in commands:
+                      completed = subprocess.run(command, cwd=root, env=env, capture_output=True, text=True)
+                      if completed.returncode:
+                          raise RuntimeError(completed.stdout + completed.stderr)
+                      result.update({prefix + key: value for key, value in json.loads(completed.stdout.strip().splitlines()[-1]).items()})
                   print(round_index, name, result, flush=True)
                   samples[name].append(result)
 
-          rows = ['| Case | Baseline | Current | Native | Native vs baseline |', '|---|---:|---:|---:|---:|']
+          rows = ['| Case | Baseline | Current | Native | Native all | Native all delta |', '|---|---:|---:|---:|---:|---:|']
           for case in samples['baseline'][0]:
-              before, current, native = [statistics.median(x[case] for x in samples[name]) for name in variants]
-              rows.append(f'| {case} | {before:.3f} | {current:.3f} | {native:.3f} | {(native / before - 1) * 100:+.1f}% |')
+              values = [statistics.median(x[case] for x in samples[name]) for name in variants]
+              rows.append('| ' + case + ' | ' + ' | '.join(f'{value:.3f}' for value in values) + f' | {(values[-1] / values[0] - 1) * 100:+.1f}% |')
 
           report = '\n'.join(rows)
           print(report)
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
               stream.write(report + '\n')
           PY
+
+      - name: Verify candidate core contracts
+        run: |
+          cd "$RUNNER_TEMP"
+          PYTHONPATH="$RUNNER_TEMP/native_all" python -c 'import almasi; almasi.tester.run()'
