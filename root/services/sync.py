@@ -73,7 +73,7 @@ class Sync(o.Singleton):
 		if changes is None or len(self._snapshot) <= 16:
 			candidates = self._snapshot
 		elif changes:
-			with self._subscription_lock:
+			with self._observation_lock:
 				potential = len(self._broad) + sum(
 					len(self._by_id.get(identifier, ())) for identifier in changes
 				)
@@ -98,7 +98,10 @@ class Sync(o.Singleton):
 				changes if identifiers is None else changes & identifiers
 			)
 
-			if (changes is None or matching) and (local or not local_only):
+			matches_scope  = changes is None or matching
+			matches_origin = local or not local_only
+
+			if matches_scope and matches_origin:
 				yield resource, matching
 
 	# Invalidate each affected resource once and let it deliver to its listeners.
@@ -160,14 +163,14 @@ class Sync(o.Singleton):
 	def initialize(self):
 		# Only the worker handles delivery.
 		# --------------------------------------------------------------
-		self._subscription_lock = threading.RLock()
-		self._resources         = {}
-		self._snapshot          = ()
-		self._by_id             = {}
-		self._broad             = set()
-		self._next_order        = 0
-		self._commits           = o.Resource()
-		self._queue             = SimpleQueue()
+		self._observation_lock = threading.RLock()
+		self._resources        = {}
+		self._snapshot         = ()
+		self._by_id            = {}
+		self._broad            = set()
+		self._next_order       = 0
+		self._commits          = o.Resource()
+		self._queue            = SimpleQueue()
 
 		self._worker = threading.Thread(
 			target = self._run_worker_loop,
@@ -189,11 +192,12 @@ class Sync(o.Singleton):
 		identifiers = None,
 		local_only  = False
 	):
-		with self._subscription_lock:
+		with self._observation_lock:
 			if resource.is_subscribed():
 				if resource not in self._resources:
 					if isinstance(resource, o.ComputedResource):
-						identifiers = None if resource.value is o.Undefined and not resource.dependencies else resource.dependencies
+						is_unresolved = resource.value is o.Undefined and not resource.dependencies
+						identifiers   = None if is_unresolved else resource.dependencies
 
 					self._resources[resource] = (identifiers, local_only, self._next_order)
 					self._next_order += 1
@@ -228,7 +232,7 @@ class Sync(o.Singleton):
 	# Observe committed changes with their origin before asynchronous delivery.
 	# ----------------------------------------------------------------------
 	def watch_commits(self, callback):
-		with self._subscription_lock:
+		with self._observation_lock:
 			subscription = self._commits.subscribe(callback)
 
 		return subscription
@@ -237,13 +241,13 @@ class Sync(o.Singleton):
 	# The source lock precedes the resource lock in both competing operations.
 	# ----------------------------------------------------------------------
 	def commit_resource(self, resource, identifiers):
-		with self._subscription_lock:
+		with self._observation_lock:
 			resource._publish(identifiers, self)
 
 	# Replace the observed resource scope without touching its listeners.
 	# ----------------------------------------------------------------------
 	def update_resource(self, resource, identifiers):
-		with self._subscription_lock:
+		with self._observation_lock:
 			if resource in self._resources:
 				before, local_only, order = self._resources[resource]
 				self._reindex(resource, before, identifiers)
@@ -253,7 +257,7 @@ class Sync(o.Singleton):
 	# Confirm commits synchronously before queuing asynchronous invalidations.
 	# ----------------------------------------------------------------------
 	def publish_change(self, ids, local=True):
-		with self._subscription_lock:
+		with self._observation_lock:
 			self._commits.update(ids, local)
 
 			if not local or self._resources:

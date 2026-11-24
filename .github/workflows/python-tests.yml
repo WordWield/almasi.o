@@ -50,11 +50,11 @@ jobs:
           import tempfile
           from types import SimpleNamespace
           from almasi import o
+          import tester
 
           with tempfile.TemporaryDirectory(prefix='o_subscription_test_') as directory:
             type(o).__app__ = SimpleNamespace(__lib_path__=directory)
             o.start()
-            import tester
 
             o.tests.TestComputedResource.run()
             o.tests.TestSync.run()

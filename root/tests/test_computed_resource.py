@@ -1,7 +1,12 @@
 # ==============================================================================
 # TEST COMPUTED RESOURCE
 # ==============================================================================
-# Verify stable cached values, reactive dependency scopes and resource lifetime.
+# PURPOSE:
+# Verify stable cached values, observed dependency scopes and resource lifetime.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Assertions about shared observation and computed value invalidation.
+# Delegates: Registration and delivery to Resource and O Sync.
 # ==============================================================================
 
 import gc
@@ -10,6 +15,8 @@ import weakref
 from unittest import TestCase
 
 from almasi import o
+
+
 class TestComputedResource(o.Tester):
 	RUNTIME_PREFIX = 'o_computed_resource_'
 

@@ -62,11 +62,11 @@ class ComputedResource(o.Resource):
 	# ----------------------------------------------------------------------
 	def _begin(self):
 		with self._lock:
-			if self._observed_changes is not o.Undefined:
+			if self._observed_changes is o.Undefined:
+				self._candidate        = o.Undefined
+				self._observed_changes = set()
+			else:
 				raise RuntimeError('Computed resource is already being observed')
-
-			self._candidate        = o.Undefined
-			self._observed_changes = set()
 
 	# Collect live invalidations for all IDs, including newly read owners.
 	# ----------------------------------------------------------------------
@@ -92,12 +92,12 @@ class ComputedResource(o.Resource):
 		with self._lock:
 			changes = self._observed_changes
 
-			if changes is None or changes & identifiers:
+			if changes is not None and not changes & identifiers:
+				sync.update_resource(self, identifiers)
+				self.dependencies = identifiers
+				self._value       = self._candidate
+			else:
 				raise RuntimeError('Computed resource changed during read; try again')
-
-			sync.update_resource(self, identifiers)
-			self.dependencies = identifiers
-			self._value       = self._candidate
 
 	# Restore idle state even after an exception or rejected computation.
 	# ----------------------------------------------------------------------
