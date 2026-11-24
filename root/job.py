@@ -286,10 +286,8 @@ class Job(a.Logger):
 							self._node()['completed'][name] = True
 						finally:
 							if sys.exception() is None:
-								self._progress_spinner.update(f'{label} — complete')
 								logging.info('Checkpoint %s complete; seconds=%.3f', name, time.monotonic() - started)
 							else:
-								self._progress_spinner.update(f'{label} — failed')
 								logging.exception('Checkpoint %s failed; seconds=%.3f', name, time.monotonic() - started)
 				finally:
 					self._progress_spinner = None
