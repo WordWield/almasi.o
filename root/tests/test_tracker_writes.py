@@ -11,9 +11,11 @@ import time
 
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from almasi import o
+
+
 class TestTrackerWrites(o.Tester):
 
 	RUNTIME_PREFIX = 'o_tracker_writes_'
@@ -21,6 +23,37 @@ class TestTrackerWrites(o.Tester):
 	# ======================================================================
 	# PUBLIC METHODS
 	# ======================================================================
+
+	# Keep no synchronous observation resource after the last cancellation.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_commit_observer_lifetime(cls):
+		sync = o.services.Sync
+
+		assert sync._commits is None
+		first  = sync.watch_commits(Mock())
+		second = sync.watch_commits(Mock())
+
+		try:
+			assert sync._commits.is_subscribed()
+			first()
+			assert sync._commits.is_subscribed()
+			second()
+			assert sync._commits is None
+
+			third = sync.watch_commits(Mock())
+
+			try:
+				first()
+				second()
+				assert sync._commits.is_subscribed()
+			finally:
+				third()
+
+			assert sync._commits is None
+		finally:
+			first()
+			second()
 
 	# Record owners of successful O writes, without duplicates.
 	# ----------------------------------------------------------------------
@@ -188,8 +221,6 @@ class TestTrackerWrites(o.Tester):
 		state = cls._patch_runtime()
 
 		try:
-			from unittest.mock import Mock, call
-
 			callback    = Mock()
 			sync        = o.services.Sync
 			observation = sync.watch_commits(callback)
@@ -198,11 +229,11 @@ class TestTrackerWrites(o.Tester):
 				sync.publish_change([1601], local=False)
 				sync.publish_change([1602], local=True)
 				assert callback.call_args_list == [
-					call([1601], False),
-					call([1602], True),
+					call(([1601], False)),
+					call(([1602], True)),
 				]
 			finally:
-				observation.cancel()
+				observation()
 		finally:
 			cls._restore_runtime(state)
 

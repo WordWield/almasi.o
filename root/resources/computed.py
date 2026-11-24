@@ -1,13 +1,20 @@
 # ==============================================================================
-# COMPUTED RESOURCE
+# COMPUTED
 # ==============================================================================
+# PURPOSE:
 # Retain a computed value and its observed O dependency scope.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Cached value and observed dependencies.
+# Delegates: Dependency matching to Sync and listener delivery to Resource.
 # ==============================================================================
 
 import threading
 
 from almasi import o
-class ComputedResource(o.Resource):
+
+
+class Computed(o.Resource):
 
 	# ==========================================================================
 	# FRAMEWORK METHODS
@@ -45,21 +52,21 @@ class ComputedResource(o.Resource):
 			else:
 				self._candidate = value
 
-	# Mark an observed value stale without changing its subscription scope.
+	# Observe dependencies in Sync while this resource has listeners.
 	# ----------------------------------------------------------------------
-	def _invalidate(self):
-		with self._lock:
-			self._value = o.Undefined
+	@property
+	def _observe(self):
+		return o.services.Sync.observe
 
 	# Start one non-replayable computation without exposing partial values.
 	# ----------------------------------------------------------------------
 	def _begin(self):
 		with self._lock:
-			if self._observed_changes is not o.Undefined:
+			if self._observed_changes is o.Undefined:
+				self._candidate        = o.Undefined
+				self._observed_changes = set()
+			else:
 				raise RuntimeError('Computed resource is already being observed')
-
-			self._candidate        = o.Undefined
-			self._observed_changes = set()
 
 	# Collect live invalidations for all IDs, including newly read owners.
 	# ----------------------------------------------------------------------
@@ -85,12 +92,12 @@ class ComputedResource(o.Resource):
 		with self._lock:
 			changes = self._observed_changes
 
-			if changes is None or changes & identifiers:
+			if changes is not None and not changes & identifiers:
+				sync.observe(self, identifiers)
+				self.dependencies = identifiers
+				self._value       = self._candidate
+			else:
 				raise RuntimeError('Computed resource changed during read; try again')
-
-			sync.update_resource(self, identifiers)
-			self.dependencies = identifiers
-			self._value       = self._candidate
 
 	# Restore idle state even after an exception or rejected computation.
 	# ----------------------------------------------------------------------
@@ -108,7 +115,10 @@ class ComputedResource(o.Resource):
 	def read(self):
 		return self.value
 
-	# Register each listener separately through the O Sync source.
+	# Invalidate the cached value once before notifying its listeners.
 	# ----------------------------------------------------------------------
-	def subscribe(self, callback):
-		return o.services.Sync.subscribe(self, callback)
+	def update(self, changed=None):
+		with self._lock:
+			self._value = o.Undefined
+
+		super().update(changed)

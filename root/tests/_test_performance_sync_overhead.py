@@ -1,8 +1,12 @@
 # ==============================================================================
 # SYNC PRODUCER OVERHEAD DIAGNOSTIC
 # ==============================================================================
-# Isolate per-commit queue insertion, worker contention, subscriber overhead.
-# Production Sync is never modified.
+# PURPOSE:
+# Measure committed writes, publication, matching and dependency refresh.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Timings of identical isolated workloads across revisions.
+# Delegates: Persistence, indexing and delivery to the actual O runtime.
 # ==============================================================================
 
 import argparse
@@ -18,6 +22,7 @@ import time
 from types import SimpleNamespace
 
 from almasi import o
+
 OWNER_ID = 1 << 60
 BLOCK_ID = OWNER_ID + 1
 DRAIN_ID = OWNER_ID + 2
@@ -40,7 +45,18 @@ class TestPerformanceSyncOverhead(o.Tester):
 			sync.publish_change([DRAIN_ID])
 			assert done.wait(10), 'Sync worker did not drain'
 		finally:
-			callback.cancel()
+			cls._cancel(callback)
+
+	# Accept the master handle and the current cancellation callable in A/B runs.
+	# ----------------------------------------------------------------------
+	@staticmethod
+	def _cancel(handle, resource=None):
+		if callable(handle):
+			handle()
+		elif resource is not None and not hasattr(handle, 'cancel'):
+			resource.unsubscribe(handle)
+		else:
+			handle.cancel()
 
 	# Each sample runs in a fresh process with an independent LMDB store.
 	# ----------------------------------------------------------------------
@@ -106,7 +122,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 					release.set()
 
 				if callback is not None:
-					callback.cancel()
+					cls._cancel(callback)
 
 				if mode != 'stub':
 					cls._drain(sync)
@@ -115,10 +131,107 @@ class TestPerformanceSyncOverhead(o.Tester):
 
 		return result
 
+	# Supply the same minimal callback to every measured observer.
+	# ----------------------------------------------------------------------
+	@staticmethod
+	def _ignore(ids):
+		return None
+
+	# Time direct delivery without worker scheduling or storage operations.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def _measure_dispatch(
+		cls,
+		sync,
+		count,
+		iterations,
+		dense=False
+	):
+		handles = [
+			sync.subscribe({OWNER_ID if dense else OWNER_ID + index}, cls._ignore)
+			for index in range(count)
+		]
+		changed = frozenset({OWNER_ID})
+
+		try:
+			for index in range(100):
+				sync._dispatch(changed)
+
+			started = time.perf_counter_ns()
+
+			for index in range(iterations):
+				sync._dispatch(changed)
+
+			result = (time.perf_counter_ns() - started) / (1000 * iterations)
+		finally:
+			for handle in handles:
+				cls._cancel(handle)
+
+		return result
+
+	# Measure multiple listeners on a real computed resource and repeated reads.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def _measure_computed(cls, sync, size):
+		item     = o.List([1])
+		resource = sync.resource()
+		handles  = [resource.subscribe(cls._ignore) for index in range(32)]
+
+		try:
+			with o.services.Tracker.track_reads(resource) as observed:
+				observed.value = item[0]
+
+			cls._drain(sync)
+			changed = frozenset({item.id})
+
+			started = time.perf_counter_ns()
+
+			for index in range(size):
+				sync._dispatch(changed)
+
+			delivery = (time.perf_counter_ns() - started) / (1000 * size)
+
+			started = time.perf_counter_ns()
+
+			for index in range(size):
+				with o.services.Tracker.track_reads(resource) as observed:
+					observed.value = item[0]
+
+			refresh = (time.perf_counter_ns() - started) / (1000 * size)
+		finally:
+			for handle in handles:
+				cls._cancel(handle, resource)
+
+		return delivery, refresh
+
 	# ======================================================================
 	# PUBLIC METHODS
 	# ======================================================================
 
+	# Compare actual source dispatch and repeated tracked computation.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def measure_dispatch(cls, size):
+		with tempfile.TemporaryDirectory(prefix='o_sync_dispatch_') as directory:
+			type(o).__app__ = SimpleNamespace(__lib_path__=directory)
+			o.start(multiprocess=False)
+
+			sync   = o.services.Sync
+			result = {}
+
+			try:
+				result['small_sparse'] = cls._measure_dispatch(sync, 8, size)
+				result['large_sparse'] = cls._measure_dispatch(sync, 1000, size)
+				result['large_dense']  = cls._measure_dispatch(sync, 1000, min(size, 300), dense=True)
+
+				result['shared_delivery'], result['unchanged_refresh'] = cls._measure_computed(sync, size)
+			finally:
+				o.services.Memory.env.close()
+
+		return result
+
+	# Run one producer diagnostic with an isolated store.
+	# ----------------------------------------------------------------------
 	@classmethod
 	def measure(cls, mode, size):
 		return cls._measure(mode, size)
@@ -132,12 +245,15 @@ if __name__ == '__main__':
 	parser.add_argument('--rounds', type=int, default=5)
 	parser.add_argument('--mode', choices=('all', 'stub', 'paused', 'worker', 'subscriber'), default='all')
 	parser.add_argument('--_json', action='store_true', help=argparse.SUPPRESS)
+	parser.add_argument('--dispatch', action='store_true')
 	args = parser.parse_args()
 
 	if args.size <= 0 or args.rounds <= 0:
 		parser.error('size and rounds must be positive')
 
-	if args._json:
+	if args.dispatch:
+		print(json.dumps(TestPerformanceSyncOverhead.measure_dispatch(args.size)))
+	elif args._json:
 		print(json.dumps(TestPerformanceSyncOverhead.measure(args.mode, args.size)))
 	else:
 		modes   = ('stub', 'paused', 'worker', 'subscriber') if args.mode == 'all' else (args.mode,)

@@ -1,17 +1,25 @@
 # ==============================================================================
 # TEST SYNC
 # ==============================================================================
+# PURPOSE:
 # Verify committed local/remote delivery, isolation, and LMDB integration.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Assertions for Sync delivery and transaction integration.
+# Delegates: Notification matching and listener delivery to production code.
 # ==============================================================================
 
 import threading
 
 from concurrent.futures import ThreadPoolExecutor
+from functools          import partial
 from queue              import Empty, Queue
 from types              import SimpleNamespace
 from unittest.mock      import patch
 
 from almasi import o
+
+
 class TestSync(o.Tester):
 
 	# ======================================================================
@@ -48,6 +56,13 @@ class TestSync(o.Tester):
 
 		if sync._worker is not threading.current_thread():
 			sync._worker.join()
+
+	# Replace a listener while an earlier resource is delivering its update.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def _replace_listener(cls, sync, cancel, received, changed):
+		cancel()
+		sync.subscribe({2}, received.append)
 
 	# ======================================================================
 	# PUBLIC METHODS
@@ -119,9 +134,9 @@ class TestSync(o.Tester):
 			assert received.empty() and forwarded.empty()
 		finally:
 			release.set()
-			blocker.cancel()
-			listener.cancel()
-			sender.cancel()
+			blocker()
+			listener()
+			sender()
 
 	# A new subscriber observes future writes, not old unobserved commits.
 	# ----------------------------------------------------------------------
@@ -135,7 +150,7 @@ class TestSync(o.Tester):
 			callback = sync.subscribe(received.put)
 			sync.publish_change([22])
 			assert received.get(timeout=2) == frozenset({22})
-			callback.cancel()
+			callback()
 			sync.publish_change([33])
 			sync.subscribe(received.put)
 			sync.publish_change([44])
@@ -328,7 +343,7 @@ class TestSync(o.Tester):
 		try:
 			sync.subscribe(global_q.put)
 			callback = sync.subscribe(watched, results.put)
-			assert isinstance(callback, o.Subscription)
+			assert callable(callback)
 
 			watched.clear()
 			watched.add(102)
@@ -338,7 +353,8 @@ class TestSync(o.Tester):
 			assert global_q.get(timeout=2) == frozenset({101})
 			assert results.get(timeout=2) == frozenset({101})
 
-			callback.update({102})
+			callback()
+			callback = sync.subscribe({102}, results.put)
 			pending.setdefault(804, []).append(101)
 			pending.setdefault(804, []).append(102)
 			sync.publish_change(pending.pop(804), local=True)
@@ -368,7 +384,7 @@ class TestSync(o.Tester):
 		try:
 			sync.subscribe(global_q.put)
 			callback = sync.subscribe({121}, filtered.put)
-			callback.cancel()
+			callback()
 
 			pending.setdefault(805, []).append(121)
 			sync.publish_change(pending.pop(805), local=True)
@@ -392,7 +408,7 @@ class TestSync(o.Tester):
 
 		try:
 			callback = sync.subscribe(callback=results.put)
-			assert isinstance(callback, o.Subscription)
+			assert callable(callback)
 			pending.setdefault(807, []).append(141)
 			sync.publish_change(pending.pop(807), local=True)
 			assert results.get(timeout=2) == frozenset({141})
@@ -418,7 +434,7 @@ class TestSync(o.Tester):
 		callback = sync.subscribe(results.put)
 
 		try:
-			callback.cancel()
+			callback()
 			pending.setdefault(40, []).append(81)
 			sync.publish_change(pending.pop(40), local=True)
 
@@ -668,7 +684,7 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 	# Callbacks may change subscriptions during delivery without deadlock.
-	# Only subscribers registered for the next dispatch receive it.
+	# A listener added to the same resource waits for its next update.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_subscriber_reentrancy(cls):
@@ -678,7 +694,7 @@ class TestSync(o.Tester):
 		second  = Queue()
 
 		def change_subscriptions(ids):
-			handle.cancel()
+			handle()
 			sync.subscribe(second.put)
 			first.put(ids)
 
@@ -698,6 +714,39 @@ class TestSync(o.Tester):
 				unexpected = None
 
 			assert unexpected is None
+		finally:
+			cls._finish(sync)
+
+	# Later resources use their live listeners, excluding canceled registrations.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_reentrant_cross_resource_subscriptions(cls):
+		sync     = cls._sync()
+		existing = []
+		canceled = []
+		added    = []
+
+		try:
+			# Register the earlier group before the later group.
+			# ----------------------------------------------------------------------
+			actions = []
+			sync.subscribe({1}, actions.append)
+			sync.subscribe({2}, existing.append)
+			cancel = sync.subscribe({2}, canceled.append)
+			sync.subscribe({1}, partial(cls._replace_listener, sync, cancel, added))
+
+			sync._dispatch(frozenset({1, 2}))
+
+			assert actions  == [frozenset({1})]
+			assert existing == [frozenset({2})]
+			assert canceled == []
+			assert added    == [frozenset({2})]
+
+			sync._dispatch(frozenset({2}))
+
+			assert existing == [frozenset({2})] * 2
+			assert canceled == []
+			assert added    == [frozenset({2})] * 2
 		finally:
 			cls._finish(sync)
 
@@ -758,7 +807,7 @@ class TestSync(o.Tester):
 			second = sync.subscribe({1002}, received.put)
 
 			assert first is not second
-			first.cancel()
+			first()
 			sync.publish_change([1001, 1002])
 			assert received.get(timeout=2) == frozenset({1002})
 			assert received.empty()
@@ -768,22 +817,83 @@ class TestSync(o.Tester):
 	# A local-only handle keeps its filter update and never echoes remote IPC.
 	# ----------------------------------------------------------------------
 	@classmethod
-	def test_local_only_handle_update_and_cancel(cls):
+	def test_local_only_scope_replacement_and_cancel(cls):
 		sync     = cls._sync()
 		forwarded = Queue()
 
 		try:
 			handle = sync.subscribe({2001}, forwarded.put, local_only=True)
-			handle.update({2002})
+			handle()
+			handle = sync.subscribe({2002}, forwarded.put, local_only=True)
 			sync.publish_change([2001], local=True)
 			sync.publish_change([2002], local=False)
 			sync.publish_change([2002], local=True)
 			assert forwarded.get(timeout=2) == frozenset({2002})
 
-			handle.cancel()
+			handle()
 			sync.publish_change([2002], local=True)
 			assert forwarded.empty()
 		finally:
+			cls._finish(sync)
+
+	# Equivalent raw observations share one source without sharing handles.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_shared_raw_observation(cls):
+		sync   = cls._sync()
+		events = []
+		first  = sync.subscribe({7, 8}, events.append)
+		second = sync.subscribe({8, 7}, events.append)
+		local  = sync.subscribe({7, 8}, events.append, local_only=True)
+
+		try:
+			assert first is not second
+			assert len(sync._resources) == 2
+
+			sync._dispatch(frozenset({7}), local=False)
+			assert events == [frozenset({7})] * 2
+
+			first()
+			assert len(sync._resources) == 2
+			events.clear()
+
+			sync._dispatch(frozenset({8}))
+			assert events == [frozenset({8})] * 2
+
+			second()
+			assert len(sync._resources) == 1
+			local()
+			assert not sync._resources
+			assert not sync._by_id
+		finally:
+			first()
+			second()
+			local()
+			cls._finish(sync)
+
+	# Preserve registration order and matching scope through the sparse index.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_sparse_resource_dispatch(cls):
+		sync     = cls._sync()
+		received = []
+		handles  = []
+
+		try:
+			for identifier in range(64):
+				handles.append(sync.subscribe({identifier}, received.append))
+
+			sync._dispatch(frozenset({31, 7, 52}))
+			assert received == [frozenset({7}), frozenset({31}), frozenset({52})]
+
+			handles[31]()
+			received.clear()
+			sync._dispatch(frozenset({31, 7, 52}))
+			assert received == [frozenset({7}), frozenset({52})]
+		finally:
+			for handle in handles:
+				handle()
+
 			cls._finish(sync)
 
 	# A real LMDB commit must be visible to subscribers running on the

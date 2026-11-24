@@ -1,7 +1,12 @@
 # ==============================================================================
 # TEST COMPUTED RESOURCE
 # ==============================================================================
-# Verify stable cached values, reactive dependency scopes and resource lifetime.
+# PURPOSE:
+# Verify stable cached values, observed dependency scopes and resource lifetime.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Assertions about shared observation and computed value invalidation.
+# Delegates: Registration and delivery to Resource and O Sync.
 # ==============================================================================
 
 import gc
@@ -10,6 +15,8 @@ import weakref
 from unittest import TestCase
 
 from almasi import o
+
+
 class TestComputedResource(o.Tester):
 	RUNTIME_PREFIX = 'o_computed_resource_'
 
@@ -21,9 +28,9 @@ class TestComputedResource(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_resource_module_symmetry(cls):
-		assert o.ComputedResource.__bases__ == (o.Resource,)
+		assert o.resources.Computed.__bases__ == (o.Resource,)
 		assert o.Resource.__bases__ == (o.Module,)
-		assert issubclass(o.ComputedResource, o.Module)
+		assert issubclass(o.resources.Computed, o.Module)
 
 	# Keep a stable resource while filling and invalidating its value.
 	# ----------------------------------------------------------------------
@@ -34,7 +41,7 @@ class TestComputedResource(o.Tester):
 		try:
 			Model    = o.T.extend('ComputedObserved', count=int)
 			item     = Model(count=4)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			events   = []
 			handle   = resource.subscribe(events.append)
 
@@ -46,19 +53,28 @@ class TestComputedResource(o.Tester):
 				assert resource.read() is o.Undefined
 
 			assert resource.read() == 8
+			assert o.resources.Computed.subscribe is o.Resource.subscribe
+
+			second_events = []
+			second_handle = resource.subscribe(second_events.append)
+			assert o.services.Sync._by_id[item.id] == {resource}
 			assert resource.dependencies == frozenset({item.id})
-			assert handle._identifiers == frozenset({item.id})
+			assert o.services.Sync._resources[resource][2] == frozenset({item.id})
 
 			o.services.Sync._dispatch(frozenset({item.id}))
 
 			assert resource.read() is o.Undefined
 			assert events == [frozenset({item.id})]
+			assert second_events == events
+			resource.unsubscribe(second_handle)
+			assert resource in o.services.Sync._resources
 
 			with o.services.Tracker.track_reads(resource) as observed:
 				observed.value = item.count * 3
 
 			assert resource.read() == 12
-			handle.cancel()
+			resource.unsubscribe(handle)
+			assert resource not in o.services.Sync._resources
 		finally:
 			cls._restore_runtime(state)
 
@@ -66,7 +82,7 @@ class TestComputedResource(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_null_result_and_empty_dependency_scope(cls):
-		resource = o.ComputedResource()
+		resource = o.resources.Computed()
 		handle   = resource.subscribe(lambda changed: None)
 
 		with o.services.Tracker.track_reads(resource) as observed:
@@ -74,8 +90,32 @@ class TestComputedResource(o.Tester):
 
 		assert resource.read() is None
 		assert resource.dependencies == frozenset()
-		assert handle._identifiers == frozenset()
-		handle.cancel()
+		assert o.services.Sync._resources[resource][2] == frozenset()
+		resource.unsubscribe(handle)
+
+	# An unchanged dependency scope must preserve the dispatch snapshot and index.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_unchanged_dependencies_preserve_index(cls):
+		resource = o.resources.Computed()
+		handle   = resource.subscribe(lambda changed: None)
+		sync     = o.services.Sync
+
+		try:
+			with o.services.Tracker.track_reads(resource) as observed:
+				observed.value = 1
+
+			snapshot = sync._snapshot
+			entry    = sync._resources[resource]
+
+			with o.services.Tracker.track_reads(resource) as observed:
+				observed.value = 2
+
+			assert resource.read() == 2
+			assert sync._snapshot is snapshot
+			assert sync._resources[resource] is entry
+		finally:
+			resource.unsubscribe(handle)
 
 	# Replace observation scope only after successful new computation.
 	# ----------------------------------------------------------------------
@@ -87,7 +127,7 @@ class TestComputedResource(o.Tester):
 			Model    = o.T.extend('ComputedScopes', count=int)
 			first    = Model(count=1)
 			second   = Model(count=2)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			events   = []
 			handle   = resource.subscribe(events.append)
 
@@ -101,7 +141,7 @@ class TestComputedResource(o.Tester):
 				observed.value = second.count
 
 			assert resource.dependencies == frozenset({second.id})
-			assert handle._identifiers == frozenset({second.id})
+			assert o.services.Sync._resources[resource][2] == frozenset({second.id})
 
 			events.clear()
 			o.services.Sync._dispatch(frozenset({first.id}))
@@ -111,7 +151,7 @@ class TestComputedResource(o.Tester):
 			o.services.Sync._dispatch(frozenset({second.id}))
 			assert resource.value is o.Undefined
 			assert events == [frozenset({second.id})]
-			handle.cancel()
+			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)
 
@@ -124,7 +164,7 @@ class TestComputedResource(o.Tester):
 		try:
 			Model    = o.T.extend('ComputedConflict', count=int)
 			item     = Model(count=1)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			handle   = resource.subscribe(lambda changed: None)
 
 			with TestCase().assertRaisesRegex(RuntimeError, 'changed during read'):
@@ -134,8 +174,8 @@ class TestComputedResource(o.Tester):
 
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset()
-			assert handle._identifiers is None
-			handle.cancel()
+			assert o.services.Sync._resources[resource][2] is None
+			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)
 
@@ -148,7 +188,7 @@ class TestComputedResource(o.Tester):
 		try:
 			Model    = o.T.extend('ComputedCommittedConflict', count=int)
 			item     = Model(count=1)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			handle   = resource.subscribe(lambda changed: None)
 
 			with TestCase().assertRaisesRegex(RuntimeError, 'changed during read'):
@@ -158,7 +198,7 @@ class TestComputedResource(o.Tester):
 
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset()
-			handle.cancel()
+			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)
 
@@ -172,7 +212,7 @@ class TestComputedResource(o.Tester):
 			Model    = o.T.extend('ComputedFailure', count=int)
 			first    = Model(count=1)
 			second   = Model(count=2)
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			handle   = resource.subscribe(lambda changed: None)
 
 			with o.services.Tracker.track_reads(resource) as observed:
@@ -186,8 +226,8 @@ class TestComputedResource(o.Tester):
 
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset({first.id})
-			assert handle._identifiers == frozenset({first.id})
-			handle.cancel()
+			assert o.services.Sync._resources[resource][2] == frozenset({first.id})
+			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)
 
@@ -196,7 +236,7 @@ class TestComputedResource(o.Tester):
 	@classmethod
 	def test_final_cancel_releases_resource(cls):
 		def observed_reference():
-			resource = o.ComputedResource()
+			resource = o.resources.Computed()
 			handle   = resource.subscribe(lambda changed: None)
 
 			with o.services.Tracker.track_reads(resource) as observed:
@@ -204,7 +244,7 @@ class TestComputedResource(o.Tester):
 
 			assert resource.read() == 7
 			reference = weakref.ref(resource)
-			handle.cancel()
+			resource.unsubscribe(handle)
 			return reference
 
 		reference = observed_reference()

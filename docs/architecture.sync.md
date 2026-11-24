@@ -19,8 +19,8 @@ Three separate owners provide reactive state:
    It neither intercepts writes nor registers subscribers.
 2. **Memory/Zone** persist changes and supply the affected owner IDs to
    **Sync**, independently of Tracker scopes.
-3. **A consumer** (for example Web) owns the cached computation, its ID
-   dependencies, subscription lifetime, refetch policy, and network delivery.
+3. **Computed** owns the cached computation, its dependencies and
+   subscriptions. The consumer owns refetch policy and network delivery.
 
 The necessary correctness condition within one ontology world is:
 
@@ -38,7 +38,7 @@ are identities, not property names, value diffs or snapshots.
 After the application has been selected via Almasi:
 
 ~~~python
-import o
+from almasi import o
 
 o.start()
 sync = o.services.Sync
@@ -58,10 +58,16 @@ graph for a new world), independent of notifications. See
 
 ## Subscriber API
 
-Sync extends Almasi's `Subscribable` service. It delegates subscriber
-registration, lifecycle and exception isolation to the shared implementation.
-O implements its own indexed owner-ID matching in `_matches_generator()`;
-its existing worker and transport remain O-owned.
+Sync indexes observed resources, not listener registrations. O implements
+indexed owner-ID matching in `_dispatch()`; its worker and transport
+remain O-owned. Computed inherits its listener registry from Resource.
+Sync observes each computed resource once while it has listeners. It calls
+`resource.update(matching_ids)` once per matching batch; the resource clears
+its cached value before notifying its listeners. The final cancellation
+removes the resource from the dependency index. Each ordered index entry is
+reused by both sparse and dense dispatch snapshots. The same observation operation reconciles registration, cancellation and
+recomputation. Unchanged IDs leave the index and snapshot untouched; a
+changed scope updates only added and removed IDs.
 
 | Call | Contract |
 | --- | --- |
@@ -69,14 +75,19 @@ its existing worker and transport remain O-owned.
 | `sync.subscribe(callback=callback)` | Same, explicit keyword |
 | `sync.subscribe({id1, id2}, callback)` | Observe selected owner IDs |
 | `sync.subscribe(callback, local_only=True)` | Transport-only local changes |
-| `subscription.update({id3, id4})` | Replace this registration's owner filter |
-| `subscription.cancel()` | Stop future delivery (idempotent, nonblocking) |
+| `cancel()` (returned by Sync.subscribe) | Stop future delivery (idempotent, nonblocking) |
 | `sync.publish_change(ids, local=False)` | Enqueue external invalidation |
 
-Each `subscribe()` returns a distinct `a.Subscription` handle even if the
-same callback is registered more than once. Callbacks are no longer subscription
-keys: callers retain their handle and use its `update()` and `cancel()`
-methods instead of `sync.unsubscribe(callback)`.
+Raw `sync.subscribe()` reuses one notification-only Resource per identical
+immutable scope and origin filter. It returns a distinct cancellation callable for each listener. Delivery order is registration order within a
+resource and first-observed order between resources, not a global listener
+ordering across unrelated resources. A resource snapshots its listeners at the start of its own update, not at
+the start of Sync dispatch. A listener added to an already selected resource
+before its update may receive the current invalidation. A listener added during
+that resource's own update waits for the next update. Resources newly added to
+the index during dispatch are not included in the current resource snapshot. The returned callable binds the resource and its opaque registration ID. Raw scope replacement is explicit: cancel the
+old handle and subscribe with the new scope. Computed resources instead replace
+their observed IDs automatically on successful recomputation.
 
 The ID filter must be a `set`, `frozenset`, or `None`. All filters are
 snapshotted; changing the input set does not affect a subscription. `None`
@@ -93,38 +104,41 @@ subscribers.
 
 Ordinary callbacks receive `frozenset[int] | None` and run on the
 `o-sync` worker thread. The internal `Sync.watch_commits(callback)` contract
-is different: a temporary broad `a.Subscription` observes successfully
-committed owner IDs synchronously on the publishing thread, before worker
-delivery. `Sync.commit_resource(resource, identifiers)` uses the same source
+is different: a notification-only Resource owns temporary listeners that
+observe committed owner IDs synchronously on the publishing thread, before
+worker delivery. Its callbacks receive one event tuple `(ids, local)`. The commit resource
+exists only while observed; publication does not call an empty resource. `Sync.commit_resource(resource, identifiers)` uses the same source
 lock to atomically validate observed changes, replace dependency scopes, and
 publish a completed resource value. These calls are reserved for
-`Tracker.track_reads(ComputedResource)`; ordinary clients should use
+`Tracker.track_reads(resource)`; ordinary clients should use
 `subscribe()` and receive worker-delivered hints as before.
 
 Cross-thread consumers hand off to their own event loop. Dispatch
-uses the filter snapshot from the beginning of each batch. `update()` takes
-effect on later batches. `cancel()` does not wait for a callback already
-running; subsequent deliveries skip canceled registrations. Callbacks can
+uses the resource scope snapshot from the beginning of each batch. A scope
+replacement takes effect on later batches. `cancel()` does not wait for a callback already selected for invocation or
+running. A canceled registration is skipped if it is removed before its
+callback is looked up, including during the current resource update or a
+preceding resource's callback. Callbacks can
 register or cancel subscriptions reentrantly. One callback's exception is
 logged without suppressing delivery to the others.
 
-Example of narrowing the initial broad watch after tracked computation:
+Example of observing a computed resource:
 
 ~~~python
-reads = []
-subscription = sync.subscribe(on_change)
+resource = o.resources.Computed()
+subscription_id = resource.subscribe(on_change)
 
 try:
-	with o.services.Tracker.track_reads(reads):
-		value = o.V.counter['count']
+	with o.services.Tracker.track_reads(resource) as computed:
+		computed.value = o.V.counter['count']
 
-	subscription.update(set(reads))
+	value = resource.read()
 finally:
-	subscription.cancel()
+	resource.unsubscribe(subscription_id)
 ~~~
 
-This illustrates O's source API only. The consuming application
-infrastructure owns result caching, refetch policy, and its own view lifecycle.
+The tracked computation replaces the resource's dependency scope under
+the publication lock. Recomputing does not replace any subscriber.
 
 ## Producer API (O infrastructure only)
 
@@ -189,7 +203,7 @@ Consumers re-read committed state through O APIs.
 
 ## Verification and non-goals
 
-- `test_sync.py`: filtered/global/empty subscriptions, scope update,
+- `test_sync.py`: filtered/global/empty subscriptions, scope replacement,
   None/full invalidation, worker-thread callbacks, origin-preserving burst
   coalescing, no replay of unobserved changes, commit visibility, abort,
   concurrent producers, blocking queue delivery, reentrant and failing
@@ -201,7 +215,10 @@ Consumers re-read committed state through O APIs.
   `--sync stub` compares native Sync with no-op producer callbacks, not
   distributed transport or browser latency.
 
-The common subscription mechanism is specified in\n[Almasi Subscribable](https://github.com/apodgorny/almasi/blob/master/docs/architecture.subscribable.md).\n\nSync itself is **in-process, non-durable, non-replayable**. Optional Transport
+The common subscription mechanism is specified in
+[Almasi Resource](https://github.com/WordWield/almasi/blob/master/docs/architecture.resource.md).
+
+Sync itself is **in-process, non-durable, non-replayable**. Optional Transport
 provides host-local invalidation forwarding; Sync never references Transport
 or owns its lifecycle. There is no revision ordering, authorization or UI
 responsibility in Sync.

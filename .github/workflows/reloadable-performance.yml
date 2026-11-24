@@ -1,4 +1,4 @@
-name: O ReloadableModule benchmark
+name: O performance
 
 on:
   pull_request:
@@ -23,15 +23,15 @@ jobs:
       - name: Checkout Almasi
         uses: actions/checkout@v4
         with:
-          repository: apodgorny/almasi
-          ref: master
+          repository: WordWield/almasi
+          ref: 8c3a4018941c01b07152e40962fff74c8f1ff652
           path: almasi
 
       - name: Checkout Almasi compatible with O master baseline
         uses: actions/checkout@v4
         with:
-          repository: apodgorny/almasi
-          ref: 8d105e9b39d545c40484031d7bc6b1836d2d024d
+          repository: WordWield/almasi
+          ref: 106c98a13d0d6e8e7186145e8ab1473c4ac9b7e7
           path: almasi_before
 
       - name: Set up Python
@@ -41,9 +41,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -e ./almasi -e ./after jsonschema
+          python -m pip install -e ./almasi -r ./after/requirements.txt
+          mkdir -p "$RUNNER_TEMP/before" "$RUNNER_TEMP/after"
+          ln -s "$GITHUB_WORKSPACE/before" "$RUNNER_TEMP/before/almasi.o"
+          ln -s "$GITHUB_WORKSPACE/after" "$RUNNER_TEMP/after/almasi.o"
 
-      - name: Benchmark baseline and PR with declaration included
+      - name: Benchmark the actual baseline and candidate
         run: |
           python - <<'PY'
           import json
@@ -52,56 +55,50 @@ jobs:
           import subprocess
           import sys
 
-          def measure(revision):
-          	root = os.path.join(os.environ['GITHUB_WORKSPACE'], revision)
-          	env  = dict(os.environ)
-          	almasi_path = 'almasi_before' if revision == 'before' else 'almasi'
-          	almasi_root = os.path.join(os.environ['GITHUB_WORKSPACE'], almasi_path)
-          	env['PYTHONPATH'] = root + os.pathsep + almasi_root + os.pathsep + env.get('PYTHONPATH', '')
-          	runner = os.path.join(root, 'root/tests/_test_performance.py')
-
-          	completed = subprocess.run(
-          		[sys.executable, runner, '--size', '1000', '--workload', 'expanded',
-          		 '--_mode', 'graph', '--_json'],
-          		cwd            = root,
-          		env            = env,
-          		capture_output = True,
-          		text           = True,
-          		check          = True,
-          	)
-          	return json.loads(completed.stdout)
-
-          samples = {'before': [], 'after': []}
+          workspace = os.environ['GITHUB_WORKSPACE']
+          temporary = os.environ['RUNNER_TEMP']
+          revisions = {
+              'before': 'almasi_before',
+              'after':  'almasi',
+          }
+          samples = {revision: [] for revision in revisions}
 
           for round_index in range(5):
-          	order = ['before', 'after'] if round_index % 2 == 0 else ['after', 'before']
-          	for revision in order:
-          		print(f'Round {round_index + 1}: {revision}', flush=True)
-          		samples[revision].append(measure(revision))
+              order = tuple(revisions) if round_index % 2 == 0 else tuple(reversed(revisions))
+
+              for revision in order:
+                  root = os.path.join(workspace, revision)
+                  core = os.path.join(workspace, revisions[revision])
+                  env = {
+                      **os.environ,
+                      'PYTHONPATH': core,
+                      'ALMASI_PATH': os.path.join(temporary, revision),
+                      'PYTHONHASHSEED': str(round_index),
+                  }
+                  runner = os.path.join(root, 'root/tests/_test_performance.py')
+                  completed = subprocess.run(
+                      [sys.executable, runner, '--size', '1000', '--workload', 'expanded', '--_mode', 'graph', '--_json'],
+                      cwd=root, env=env, capture_output=True, text=True, check=True,
+                  )
+                  result = json.loads(completed.stdout.strip().splitlines()[-1])
+                  samples[revision].append(result)
+                  print(round_index, revision, result, flush=True)
 
           operations = list(samples['before'][0])
           assert 'define' in operations, 'Declaration workload missing'
           assert operations == list(samples['after'][0]), 'Benchmark cases differ'
 
-          rows = [
-          	'| Operation | Before (us/op) | After (us/op) | Delta |',
-          	'|---|---:|---:|---:|',
-          ]
+          rows = ['| Operation | Before (us/op) | After (us/op) | Delta |', '|---|---:|---:|---:|']
 
           for operation in operations:
-          	before = statistics.median([run[operation] for run in samples['before']])
-          	after  = statistics.median([run[operation] for run in samples['after']])
-          	delta  = (after / before - 1) * 100
-          	rows.append(f'| {operation} | {before:.3f} | {after:.3f} | {delta:+.1f}% |')
+              before = statistics.median(run[operation] for run in samples['before'])
+              after  = statistics.median(run[operation] for run in samples['after'])
+              delta  = (after / before - 1) * 100
+              rows.append(f'| {operation} | {before:.3f} | {after:.3f} | {delta:+.1f}% |')
 
-          report = '\n'.join([
-          	'## O ReloadableModule performance',
-          	'Python 3.12; 5 alternating rounds, 1000 iterations, isolated LMDB per run.',
-          	'Lower is faster; medians in microseconds per operation.',
-          	*rows,
-          ])
+          report = '\n'.join(rows)
           print(report, flush=True)
 
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as file:
-          	file.write(report + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+              stream.write(report + '\n')
           PY

@@ -13,6 +13,7 @@ from io         import StringIO
 from unittest   import TestCase
 from unittest.mock import patch
 
+import almasi
 from almasi import o
 UNDEFINED = o.Undefined
 
@@ -527,9 +528,9 @@ class TestClass(o.Tester):
 			# Keep background filesystem deliveries out of this manual reload.
 			# The subscription must be canceled before the lock is released.
 			# --------------------------------------------------------------
-			filesystem = o.services.Filesystem
+			filesystem = almasi.services.Filesystem
 
-			with filesystem._subscription_lock:
+			with filesystem._observation_lock:
 				try:
 					with patch.object(type(filesystem), '_watch', return_value=None):
 						assert o.T.__bases__ == (o.TReloadableModule,)
@@ -556,7 +557,7 @@ class TestClass(o.Tester):
 						assert Updated._reload_subscription is subscription
 				finally:
 					if subscription is not None:
-						subscription.cancel()
+						Original._reload_file.unsubscribe(subscription)
 		finally:
 			cls._restore_runtime(state)
 

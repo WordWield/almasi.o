@@ -509,7 +509,7 @@ class TestInstance(o.Tester):
 			while x.id not in checkpoint.get(timeout=2):
 				pass
 
-			barrier.cancel()
+			barrier()
 			callback = sync.subscribe({x.id}, received.put)
 
 			x.foo = 'b'
@@ -519,7 +519,7 @@ class TestInstance(o.Tester):
 			assert x.id in received.get(timeout=2)
 		finally:
 			if callback is not None:
-				callback.cancel()
+				callback()
 
 			cls._restore_runtime(state)
 
