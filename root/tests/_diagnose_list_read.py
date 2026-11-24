@@ -1,138 +1,166 @@
 # ==============================================================================
-# LIST READ DIAGNOSTIC
+# ENTITY CACHE DIAGNOSTIC
 # ==============================================================================
-# Compare original and fresh bytecode before and after clearing lookup caches.
+# Locate read overhead and test reversible dictionary layout changes.
 # ==============================================================================
 
-import dis
 import json
 import os
 import runpy
 import statistics
 import sys
 import tempfile
-import threading
 import time
 import timeit
 
-from functools     import partial
-from types         import FunctionType, MethodType, SimpleNamespace
+from contextlib    import nullcontext
+from types         import SimpleNamespace
 from unittest.mock import patch
 
 import almasi
 from almasi import o
 
 
-# Create a worker without entering the native filesystem observer.
+# Measure expressions against the same cached objects and rotate case order.
 # ------------------------------------------------------------------------------
-def idle_watch(root, stop):
-	stop.wait()
-
-
-# Preserve startup registration without retaining a running observer.
-# ------------------------------------------------------------------------------
-def skip_watch(root, stop):
-	return None
-
-
-# Start native observation only after the initial measurements.
-# ------------------------------------------------------------------------------
-def deferred_watch(watch, ready, root, stop):
-	ready.wait()
-	watch(root, stop)
-
-
-# Create a bound method with identical source and a fresh adaptive code object.
-# ------------------------------------------------------------------------------
-def fresh(method):
-	function = method.__func__
-	copy     = FunctionType(function.__code__.replace(), function.__globals__, function.__name__)
-
-	return MethodType(copy, method.__self__)
-
-
-# Keep the original measurement loop and compare fresh code on the same objects.
-# ------------------------------------------------------------------------------
-def sample(items, results, phase):
-	entity = o.services.Entity
-	ids    = items.__items__
-	scope  = {
-		'items'       : items,
-		'ids'         : ids,
-		'get'         : entity.get,
-		'value'       : entity.value,
-		'fresh_get'   : fresh(entity.get),
-		'fresh_value' : fresh(entity.value),
+def measure(cases, scope):
+	samples = {name: [] for name in cases}
+	timers  = {
+		name: timeit.Timer('for i in range(100000): ' + statement, timer=time.thread_time, globals=scope)
+		for name, statement in cases.items()
 	}
+	names = tuple(cases)
+
+	for round_index in range(3):
+		offset = round_index * len(names) // 3
+		order  = names[offset:] + names[:offset]
+
+		for name in order:
+			samples[name].append(timers[name].timeit(number=1) * 10)
+
+	return {name: statistics.median(values) for name, values in samples.items()}
+
+
+# Resolve cached entities while bypassing only namespace lookup.
+# ------------------------------------------------------------------------------
+def get_cached(entities, identifier, undefined):
+	entity = entities.get(identifier, undefined)
+
+	return entity
+
+
+# Measure all stages of the ordinary cached read.
+# ------------------------------------------------------------------------------
+def sample(items):
+	service  = o.services.Entity
+	cache    = o.services.Cache
+	entities = cache.entities
+	ids      = items.__items__
+	objects  = tuple(entities[identifier] for identifier in ids)
+	scope    = {
+		'o'          : o,
+		'services'   : o.services,
+		'cache'      : cache,
+		'entities'   : entities,
+		'ids'        : ids,
+		'objects'    : objects,
+		'items'      : items,
+		'service'    : service,
+		'get'        : service.get,
+		'value'      : service.value,
+		'lookup'     : entities.get,
+		'undefined'  : o.Undefined,
+		'get_cached' : get_cached,
+	}
+
+	assert all(service.get(identifier) is entity for identifier, entity in zip(ids, objects))
+	assert all(entity.__value__ == index + 1 for index, entity in enumerate(objects))
 
 	cases = {
-		'list'        : 'items[i % 5]',
-		'get'         : 'get(ids[i % 5])',
-		'value'       : 'value(ids[i % 5])',
-		'fresh_get'   : 'fresh_get(ids[i % 5])',
-		'fresh_value' : 'fresh_value(ids[i % 5])',
+		'list'         : 'items[i % 5]',
+		'get'          : 'get(ids[i % 5])',
+		'value'        : 'value(ids[i % 5])',
+		'services'     : 'o.services',
+		'cache'        : 'services.Cache',
+		'entities'     : 'cache.entities',
+		'chain'        : 'o.services.Cache.entities',
+		'dict'         : 'entities.get(ids[i % 5], undefined)',
+		'bound_dict'   : 'lookup(ids[i % 5], undefined)',
+		'full_lookup'  : 'o.services.Cache.entities.get(ids[i % 5], undefined)',
+		'cached_call'  : 'get_cached(entities, ids[i % 5], undefined)',
+		'method'       : 'service.get(ids[i % 5])',
+		'get_method'   : 'service.get',
+		'flag'         : 'objects[i % 5].__class__.__is_atom__',
+		'atom_value'   : 'objects[i % 5].__value__',
+		'unwrap'       : 'entity = objects[i % 5]; result = entity.__value__ if entity.__class__.__is_atom__ else entity',
+	}
+	results = measure(cases, scope)
+
+	print({
+		'cache_size'  : len(entities),
+		'cache_bytes' : sys.getsizeof(entities),
+		'ids'         : ids,
+		'entity_keys' : list(service.__dict__),
+		'cache_keys'  : list(cache.__dict__),
+		'types'       : [type(entity).__name__ for entity in objects],
+	}, file=sys.stderr)
+
+	# Rebuild the same registry in a different insertion order, then restore it.
+	# ----------------------------------------------------------------------
+	reordered = {key: entities[key] for key in ids}
+
+	for key, entity in entities.items():
+		reordered[key] = entity
+
+	assert reordered == entities
+
+	cases = {
+		'list'  : 'items[i % 5]',
+		'get'   : 'get(ids[i % 5])',
+		'value' : 'value(ids[i % 5])',
 	}
 
-	for name, statement in cases.items():
-		timer   = timeit.Timer('for i in range(100000): ' + statement, timer=time.thread_time, globals=scope)
-		samples = timer.repeat(repeat=3, number=1)
-		results[phase + '/' + name] = statistics.median(samples) * 10
+	try:
+		cache.entities = reordered
 
-	print(phase, file=sys.stderr)
+		for name, elapsed in measure(cases, scope).items():
+			results['reordered/' + name] = elapsed
+	finally:
+		cache.entities = entities
 
-	for method in (entity.get, entity.value, scope['fresh_get'], scope['fresh_value']):
-		dis.dis(method, adaptive=True, show_caches=True, file=sys.stderr)
+	for name, elapsed in measure(cases, scope).items():
+		results['restored/' + name] = elapsed
+
+	return results
 
 
-# Compare lookup state without changing ontology data or observer lifetimes.
+# Compare the real ontology startup with and without native observers.
 # ------------------------------------------------------------------------------
 def run():
-	root       = os.environ['EXPECTED_ROOT']
-	mode       = sys.argv[1]
-	filesystem = almasi.services.Filesystem
-	benchmark  = runpy.run_path(os.path.join(root, 'root/tests/_test_performance.py'))['TestPerformance']
-	ready      = threading.Event()
-	results    = {}
+	root        = os.environ['EXPECTED_ROOT']
+	mode        = sys.argv[1]
+	filesystem  = almasi.services.Filesystem
+	benchmark   = runpy.run_path(os.path.join(root, 'root/tests/_test_performance.py'))['TestPerformance']
+	observation = patch.object(type(filesystem), '_watch', return_value=None) if mode == 'no_watch' else nullcontext()
 
 	assert os.path.realpath(o.__path__) == os.path.join(root, 'root')
 	assert os.path.realpath(almasi.__lib_file__) == os.path.join(os.environ['EXPECTED_CORE'], 'almasi.py')
 
-	watch = {
-		'immediate': filesystem._watch,
-		'idle'     : idle_watch,
-		'deferred' : partial(deferred_watch, filesystem._watch, ready),
-		'no_watch' : skip_watch,
-	}[mode]
-
 	with tempfile.TemporaryDirectory(prefix='o_read_diagnostic_') as directory:
 		type(o).__app__ = SimpleNamespace(__lib_path__=directory)
 
-		with patch.object(type(filesystem), '_watch', staticmethod(watch)):
+		with observation:
 			o.start(tree_mode=False, multiprocess=False)
 			o.Timer.enabled = False
 			o.T.extend('APerfRun')
 			o.Timer.reset()
 
-			results['original_first'] = benchmark.trigger_list_getitem(1000) * 1000
-			items = o.List([1, 2, 3, 4, 5])
+			first   = benchmark.trigger_list_getitem(1000) * 1000
+			items   = o.List([1, 2, 3, 4, 5])
+			results = sample(items)
+			results['original_first'] = first
 
-			try:
-				sample(items, results, 'initial')
-				sys._clear_type_cache()
-				sample(items, results, 'cleared')
-				time.sleep(.25)
-				sample(items, results, 'later')
-			finally:
-				ready.set()
-
-				for entry in filesystem._watchers.values():
-					entry['stop'].set()
-
-				for entry in filesystem._watchers.values():
-					entry['thread'].join(2)
-					assert not entry['thread'].is_alive()
-
-				o.services.Memory.env.close()
+			o.services.Memory.env.close()
 
 	print(json.dumps(results))
 
