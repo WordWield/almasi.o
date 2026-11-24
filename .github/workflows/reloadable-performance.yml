@@ -46,7 +46,7 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/before" "$RUNNER_TEMP/before/almasi.o"
           ln -s "$GITHUB_WORKSPACE/after" "$RUNNER_TEMP/after/almasi.o"
 
-      - name: Compare complete benchmarks and namespace candidates
+      - name: Compare independent namespace storage against baseline
         run: |
           python - <<'PY'
           import json
@@ -64,33 +64,17 @@ jobs:
               'current': ('after', core),
           }
 
-          for name in ('native', 'native_all'):
-              candidate = os.path.join(temporary, name)
-              shutil.copytree(core, candidate, ignore=shutil.ignore_patterns('.git', '__pycache__'))
-              paths = ['lib/directory.py'] if name == 'native' else ['lib/directory.py', 'almasi.py']
-              for path in paths:
-                  path = os.path.join(candidate, path)
-                  with open(path) as stream:
-                      code = stream.read()
-                  old = 'self.__dict__[name] = result'
-                  assert code.count(old) == 1
-                  with open(path, 'w') as stream:
-                      stream.write(code.replace(old, 'object.__setattr__(self, name, result)'))
-              if name == 'native_all':
-                  path = os.path.join(candidate, 'lib/directory.py')
-                  with open(path) as stream:
-                      code = stream.read()
-                  old = 'face.__dict__.pop(name, None)'
-                  assert code.count(old) == 2
-                  # Keep native attribute storage through cache invalidation.
-                  code = code.replace('face.__dict__.pop(name, None)', 'self._evict_attribute(face, name)')
-                  anchor = '\t# Invalidate a changed file in every live inherited namespace face.'
-                  assert anchor in code
-                  method = '\t# Remove a cached native attribute.\n\t# ----------------------------------------------------------------------\n\t@staticmethod\n\tdef _evict_attribute(face, name):\n\t\ttry:\n\t\t\tobject.__delattr__(face, name)\n\t\texcept AttributeError:\n\t\t\treturn\n\n'
-                  code = code.replace(anchor, method + anchor)
-                  with open(path, 'w') as stream:
-                      stream.write(code)
-              variants[name] = ('after', candidate)
+          candidate = os.path.join(temporary, 'independent_namespace')
+          shutil.copytree(core, candidate, ignore=shutil.ignore_patterns('.git', '__pycache__'))
+          path = os.path.join(candidate, 'lib/directory.py')
+          with open(path) as stream:
+              code = stream.read()
+          anchor = '\t\tDirectory.__namespace_faces__.add(self)'
+          assert code.count(anchor) == 1
+          code = code.replace(anchor, '\t\tself.__dict__ = dict(self.__dict__.items())\n' + anchor)
+          with open(path, 'w') as stream:
+              stream.write(code)
+          variants['independent'] = ('after', candidate)
 
           samples = {name: [] for name in variants}
           script = os.path.join(workspace, 'after/root/tests/_diagnose_list_read.py')
@@ -122,7 +106,7 @@ jobs:
                   print(round_index, name, result, flush=True)
                   samples[name].append(result)
 
-          rows = ['| Case | Baseline | Current | Native | Native all | Native all delta |', '|---|---:|---:|---:|---:|---:|']
+          rows = ['| Case | Baseline | Current | Independent | Independent delta |', '|---|---:|---:|---:|---:|']
           for case in samples['baseline'][0]:
               values = [statistics.median(x[case] for x in samples[name]) for name in variants]
               rows.append('| ' + case + ' | ' + ' | '.join(f'{value:.3f}' for value in values) + f' | {(values[-1] / values[0] - 1) * 100:+.1f}% |')
@@ -136,4 +120,4 @@ jobs:
       - name: Verify candidate core contracts
         run: |
           cd "$RUNNER_TEMP"
-          PYTHONPATH="$RUNNER_TEMP/native_all" python -c 'import almasi; almasi.tester.run()'
+          PYTHONPATH="$RUNNER_TEMP/independent_namespace" python -c 'import almasi; almasi.tester.run()'
