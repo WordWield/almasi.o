@@ -41,6 +41,30 @@ jobs:
       - name: Expose the checked-out O library to Almasi
         run: ln -s "$GITHUB_WORKSPACE/o" "$RUNNER_TEMP/almasi.o"
 
+      - name: Verify resource, Sync, Tracker and Transport contracts
+        working-directory: o/root
+        env:
+          ALMASI_PATH: ${{ runner.temp }}
+        run: |
+          python - <<'PY'
+          import tempfile
+          from types import SimpleNamespace
+          from almasi import o
+
+          with tempfile.TemporaryDirectory(prefix='o_subscription_test_') as directory:
+            type(o).__app__ = SimpleNamespace(__lib_path__=directory)
+            o.start()
+            import tester
+
+            o.tests.TestComputedResource.run()
+            o.tests.TestSync.run()
+            o.tests.TestTracker.run()
+            o.tests.TestTrackerPublicApi.run()
+            o.tests.TestTrackerTransparency.run()
+            o.tests.TestTrackerWrites.run()
+            o.tests.TestTransport.run()
+          PY
+
       - name: Run isolated O tests
         env:
           ALMASI_PATH: ${{ runner.temp }}
