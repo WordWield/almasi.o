@@ -46,7 +46,7 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/before" "$RUNNER_TEMP/before/almasi.o"
           ln -s "$GITHUB_WORKSPACE/after" "$RUNNER_TEMP/after/almasi.o"
 
-      - name: Compare independent namespace and singleton storage
+      - name: Preserve native singleton method specialization
         run: |
           python - <<'PY'
           import json
@@ -64,32 +64,38 @@ jobs:
               'current': ('after', core),
           }
 
-          for name in ('independent', 'independent_all'):
-              candidate = os.path.join(temporary, name)
-              shutil.copytree(core, candidate, ignore=shutil.ignore_patterns('.git', '__pycache__'))
-              changes = {
-                  'lib/directory.py': (
-                      '\t\tDirectory.__namespace_faces__.add(self)',
-                      '\t\tself.__dict__ = dict(self.__dict__.items())\n\t\tDirectory.__namespace_faces__.add(self)',
-                  ),
-              }
-              if name == 'independent_all':
-                  changes['lib/singleton.py'] = (
-                      '\t\t\tcls.__instance__ = instance',
-                      '\t\t\tinstance.__dict__ = dict(instance.__dict__.items())\n\t\t\tcls.__instance__ = instance',
-                  )
-                  changes['almasi.py'] = (
-                      '\t\tDirectory.__namespace_faces__.add(instance)',
-                      '\t\tinstance.__dict__ = dict(instance.__dict__.items())\n\t\tDirectory.__namespace_faces__.add(instance)',
-                  )
-              for filename, (old, new) in changes.items():
-                  path = os.path.join(candidate, filename)
-                  with open(path) as stream:
-                      code = stream.read()
-                  assert code.count(old) == 1
-                  with open(path, 'w') as stream:
-                      stream.write(code.replace(old, new))
-              variants[name] = ('after', candidate)
+          candidate = os.path.join(temporary, 'native_singleton')
+          shutil.copytree(core, candidate, ignore=shutil.ignore_patterns('.git', '__pycache__'))
+          changes = {
+              'lib/directory.py': (
+                  ('\t\tDirectory.__namespace_faces__.add(self)', '\t\tself.__dict__ = dict(self.__dict__.items())\n\t\tDirectory.__namespace_faces__.add(self)'),
+              ),
+              'almasi.py': (
+                  ('\t\tDirectory.__namespace_faces__.add(instance)', '\t\tinstance.__dict__ = dict(instance.__dict__.items())\n\t\tDirectory.__namespace_faces__.add(instance)'),
+              ),
+              'lib/singleton.py': (
+                  ('instance.__dict__[\'_initialize\']', 'instance._initialize'),
+                  ('instance.__dict__[\'_is_initialized\']', 'instance._is_initialized'),
+                  ('instance.__dict__[\'_is_initializing\']', 'instance._is_initializing'),
+                  ('instance.__dict__[\'initialize\']', 'instance.initialize'),
+                  ('self.__dict__[\'_initialize\']', 'self._initialize'),
+                  ('self.__dict__[\'_is_initialized\']', 'self._is_initialized'),
+                  ('self.__dict__[\'_is_initializing\']', 'self._is_initializing'),
+                  ("self.__dict__.get('_is_initialized', True)", 'self._is_initialized'),
+                  ("self.__dict__.get('_is_initializing', False)", 'self._is_initializing'),
+                  ('\t__instance__ = None', '\t__instance__     = None\n\t_is_initialized  = True\n\t_is_initializing = False'),
+              ),
+          }
+          for filename, replacements in changes.items():
+              path = os.path.join(candidate, filename)
+              with open(path) as stream:
+                  code = stream.read()
+              for old, new in replacements:
+                  assert old in code, old
+                  code = code.replace(old, new)
+              with open(path, 'w') as stream:
+                  stream.write(code)
+          variants['native_singleton'] = ('after', candidate)
 
           samples = {name: [] for name in variants}
           script = os.path.join(workspace, 'after/root/tests/_diagnose_list_read.py')
@@ -121,7 +127,7 @@ jobs:
                   print(round_index, name, result, flush=True)
                   samples[name].append(result)
 
-          rows = ['| Case | Baseline | Current | Directory | All | All delta |', '|---|---:|---:|---:|---:|---:|']
+          rows = ['| Case | Baseline | Current | Native singleton | Delta |', '|---|---:|---:|---:|---:|']
           for case in samples['baseline'][0]:
               values = [statistics.median(x[case] for x in samples[name]) for name in variants]
               rows.append('| ' + case + ' | ' + ' | '.join(f'{value:.3f}' for value in values) + f' | {(values[-1] / values[0] - 1) * 100:+.1f}% |')
@@ -135,4 +141,4 @@ jobs:
       - name: Verify candidate core contracts
         run: |
           cd "$RUNNER_TEMP"
-          PYTHONPATH="$RUNNER_TEMP/independent_all" python -c 'import almasi; almasi.tester.run()'
+          PYTHONPATH="$RUNNER_TEMP/native_singleton" python -c 'import almasi; almasi.tester.run()'
