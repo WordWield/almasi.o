@@ -183,7 +183,7 @@ jobs:
               stream.write(report + '\n')
           PY
 
-      - name: Measure List reads with separated CPU affinity
+      - name: Locate observer startup effects in the read path
         run: |
           python - <<'PY'
           import json
@@ -197,9 +197,9 @@ jobs:
           script = os.path.join(workspace, 'after/root/tests/_diagnose_list_read.py')
           samples = {}
 
-          for round_index in range(7):
+          for round_index in range(5):
               revisions = ('before', 'after') if round_index % 2 == 0 else ('after', 'before')
-              modes = ('immediate', 'no_watch')
+              modes = ('immediate', 'idle', 'deferred', 'no_watch')
 
               if round_index % 2:
                   modes = tuple(reversed(modes))
@@ -214,6 +214,7 @@ jobs:
                           'ALMASI_PATH': os.path.join(temporary, revision),
                           'EXPECTED_ROOT': root,
                           'EXPECTED_CORE': core,
+                          'PYTHONHASHSEED': str(round_index),
                       }
                       completed = subprocess.run([sys.executable, script, mode], cwd=root, env=env, capture_output=True, text=True)
                       if completed.returncode:
@@ -224,7 +225,7 @@ jobs:
 
           rows = ['| Case | Master | PR | Delta |', '|---|---:|---:|---:|']
 
-          for mode in ('immediate', 'no_watch'):
+          for mode in ('immediate', 'idle', 'deferred', 'no_watch'):
               for case in samples[(mode, 'before')][0]:
                   before = statistics.median(x[case] for x in samples[(mode, 'before')])
                   after = statistics.median(x[case] for x in samples[(mode, 'after')])
