@@ -21,7 +21,7 @@ class TestJob(o.Tester):
 		with tempfile.TemporaryDirectory() as path:
 			os.mkdir(os.path.join(path, 'root'))
 			with open(os.path.join(path, 'app.py'), 'w') as output:
-				output.write('import almasi\n\napp = almasi.extend(\'app\')\n')
+				output.write('from almasi import a\n\napp = a.extend(\'app\')\n')
 			with open(os.path.join(path, 'root', 'trial.py'), 'w') as output:
 				output.write('''import asyncio
 import logging
@@ -61,18 +61,17 @@ import os
 import sys
 from unittest.mock import patch
 from types import SimpleNamespace
-import almasi
-from almasi import o
-from lib.logger import LogRoute
+from almasi import a, o
+from almasi.a.lib.logger import LogRoute
 
 updates = []
-original_update = almasi.Spinner.update
+original_update = a.Progress.update
 
 def update(self, text):
 	updates.append(text)
 	original_update(self, text)
 
-almasi.Spinner.update = update
+a.Progress.update = update
 type(o).__app__ = SimpleNamespace(__lib_path__=sys.argv[1])
 o.start()
 import app
@@ -144,7 +143,7 @@ async def first():
 	third.rollback('first')
 	third.fail = False
 	third.artifact = True
-	with patch.object(almasi.Logger, '_artifact', side_effect=OSError('artifact failure')):
+	with patch.object(a.Logger, '_artifact', side_effect=OSError('artifact failure')):
 		try:
 			await third.run()
 		except OSError:

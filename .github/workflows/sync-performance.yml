@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: WordWield/almasi
-          ref: 8c3a4018941c01b07152e40962fff74c8f1ff652
+          ref: master
           path: almasi
 
       - name: Checkout O baseline
@@ -34,14 +34,6 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: baseline_o
-
-      - name: Checkout compatible Almasi baseline
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@v4
-        with:
-          repository: WordWield/almasi
-          ref: 106c98a13d0d6e8e7186145e8ab1473c4ac9b7e7
-          path: baseline_almasi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -80,7 +72,7 @@ jobs:
           environments = {
               'master': {
                   **os.environ,
-                  'PYTHONPATH': os.path.join(workspace, 'baseline_almasi'),
+                  'PYTHONPATH': os.path.join(workspace, 'almasi'),
                   'ALMASI_PATH': os.path.join(temporary, 'sync_baseline'),
               },
               'PR': {

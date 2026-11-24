@@ -21,7 +21,7 @@ class TestJobRollback(o.Tester):
 		with tempfile.TemporaryDirectory() as path:
 			os.mkdir(os.path.join(path, 'root'))
 			with open(os.path.join(path, 'app.py'), 'w') as stream:
-				stream.write('import almasi\n\napp = almasi.extend(\'app\')\n')
+				stream.write('from almasi import a\n\napp = a.extend(\'app\')\n')
 			with open(os.path.join(path, 'root', 'trial.py'), 'w') as stream:
 				stream.write('''import os
 from almasi import o

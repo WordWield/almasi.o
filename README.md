@@ -3,7 +3,7 @@
 **AI can generate answers. But intelligent software needs a world that survives the answer.**
 Almasi O makes Python types, entities, relationships and collections part of **one persistent, inspectable object system**.
 **One model for code, state and schema—not three representations stitched together.**
-[Watch the technical overview](https://youtu.be/M8GxATOocD0) · [Almasi Core](https://github.com/WordWield/almasi) · [Almasi Do: Agents](https://github.com/WordWield/almasi.do)
+[Watch the technical overview](https://youtu.be/M8GxATOocD0) · [Almasi Core](https://github.com/WordWield/almasi.a) · [Almasi Do: Agents](https://github.com/WordWield/almasi.do)
 
 ## Try it: the object is the database
 
@@ -172,7 +172,7 @@ For correctness, the difference between **observed reads** and **committed write
 
 ## Place in the Almasi ecosystem
 
-**[Almasi Core](https://github.com/WordWield/almasi)** supplies filesystem-native library composition and lazy acquisition.
+**[Almasi Core](https://github.com/WordWield/almasi.a)** supplies filesystem-native library composition; the installed Almasi loader acquires libraries lazily.
 
 **Almasi O** supplies persistent entities, types, relationships, identity and schema.
 

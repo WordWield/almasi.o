@@ -13,8 +13,7 @@ from io         import StringIO
 from unittest   import TestCase
 from unittest.mock import patch
 
-import almasi
-from almasi import o
+from almasi import a as core, o
 UNDEFINED = o.Undefined
 
 
@@ -528,7 +527,7 @@ class TestClass(o.Tester):
 			# Keep background filesystem deliveries out of this manual reload.
 			# The subscription must be canceled before the lock is released.
 			# --------------------------------------------------------------
-			filesystem = almasi.services.Filesystem
+			filesystem = core.services.Filesystem
 
 			with filesystem._observation_lock:
 				try:
