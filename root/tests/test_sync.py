@@ -788,6 +788,31 @@ class TestSync(o.Tester):
 		finally:
 			cls._finish(sync)
 
+	# Preserve registration order and matching scope through the sparse index.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_sparse_resource_dispatch(cls):
+		sync     = cls._sync()
+		received = []
+		handles  = []
+
+		try:
+			for identifier in range(64):
+				handles.append(sync.subscribe({identifier}, received.append))
+
+			sync._dispatch(frozenset({31, 7, 52}))
+			assert received == [frozenset({7}), frozenset({31}), frozenset({52})]
+
+			handles[31].cancel()
+			received.clear()
+			sync._dispatch(frozenset({31, 7, 52}))
+			assert received == [frozenset({7}), frozenset({52})]
+		finally:
+			for handle in handles:
+				handle.cancel()
+
+			cls._finish(sync)
+
 	# A real LMDB commit must be visible to subscribers running on the
 	# worker thread, after the writer has finished the transaction.
 	# ----------------------------------------------------------------------

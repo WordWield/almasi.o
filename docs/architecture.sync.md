@@ -59,12 +59,15 @@ graph for a new world), independent of notifications. See
 ## Subscriber API
 
 Sync indexes observed resources, not listener registrations. O implements
-indexed owner-ID matching in `_matches_generator()`; its worker and transport
+indexed owner-ID matching in `_dispatch()`; its worker and transport
 remain O-owned. ComputedResource inherits its listener registry from Resource.
 Sync observes each computed resource once while it has listeners. It calls
 `resource.update(matching_ids)` once per matching batch; the resource clears
 its cached value before notifying its listeners. The final cancellation
-removes the resource from the dependency index.
+removes the resource from the dependency index. Each ordered index entry is
+reused by both sparse and dense dispatch snapshots. A recomputation with
+unchanged IDs leaves the index and snapshot untouched; a changed scope
+updates only added and removed IDs.
 
 | Call | Contract |
 | --- | --- |

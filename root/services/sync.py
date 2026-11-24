@@ -44,7 +44,7 @@ class Sync(o.Singleton):
 		if before is None:
 			self._broad.discard(resource)
 		else:
-			for identifier in before:
+			for identifier in before if after is None else before - after:
 				bucket = self._by_id[identifier]
 				bucket.discard(resource)
 
@@ -54,20 +54,17 @@ class Sync(o.Singleton):
 		if after is None:
 			self._broad.add(resource)
 		else:
-			for identifier in after:
+			for identifier in after if before is None else after - before:
 				self._by_id.setdefault(identifier, set()).add(resource)
 
 	# Snapshot scopes for broad and dense invalidations.
 	# ----------------------------------------------------------------------
 	def _refresh(self):
-		self._snapshot = tuple(
-			(resource, identifiers, local_only)
-			for resource, (identifiers, local_only, _) in self._resources.items()
-		)
+		self._snapshot = tuple(self._resources.values())
 
-	# Match changed owner IDs through the existing sparse/dense resource index.
+	# Deliver through the sparse/dense index without rebuilding matched entries.
 	# ----------------------------------------------------------------------
-	def _matches_generator(self, changed, local):
+	def _dispatch(self, changed, local=True):
 		changes = changed if changed is None or isinstance(changed, frozenset) else self._scope(changed)
 
 		if changes is None or len(self._snapshot) <= 16:
@@ -86,29 +83,19 @@ class Sync(o.Singleton):
 					for identifier in changes:
 						matched.update(self._by_id.get(identifier, ()))
 
-					candidates = tuple(
-						(resource, *self._resources[resource][:2])
-						for resource in sorted(matched, key=lambda resource: self._resources[resource][2])
-					)
+					candidates = sorted(self._resources[resource] for resource in matched)
 		else:
 			candidates = ()
 
-		for resource, identifiers, local_only in candidates:
-			matching = None if changes is None else (
-				changes if identifiers is None else changes & identifiers
-			)
+		for _, resource, identifiers, local_only in candidates:
+			if local or not local_only:
+				matching = None if changes is None else (
+					changes if identifiers is None else changes & identifiers
+				)
 
-			matches_scope  = changes is None or matching
-			matches_origin = local or not local_only
-
-			if matches_scope and matches_origin:
-				yield resource, matching
-
-	# Invalidate each affected resource once and let it deliver to its listeners.
-	# ----------------------------------------------------------------------
-	def _dispatch(self, changed, local=True):
-		for resource, matching in self._matches_generator(changed, local):
-			resource.update(matching)
+				if changes is None or matching:
+					if resource in self._resources:
+						resource.update(matching)
 
 	# One delivery point for local and external invalidations.
 	# ----------------------------------------------------------------------
@@ -199,12 +186,12 @@ class Sync(o.Singleton):
 						is_unresolved = resource.value is o.Undefined and not resource.dependencies
 						identifiers   = None if is_unresolved else resource.dependencies
 
-					self._resources[resource] = (identifiers, local_only, self._next_order)
+					self._resources[resource] = (self._next_order, resource, identifiers, local_only)
 					self._next_order += 1
 					self._reindex(resource, frozenset(), identifiers)
 					self._refresh()
 			elif resource in self._resources:
-				before, _, _ = self._resources.pop(resource)
+				_, _, before, _ = self._resources.pop(resource)
 				self._reindex(resource, before, frozenset())
 				self._refresh()
 
@@ -249,10 +236,12 @@ class Sync(o.Singleton):
 	def update_resource(self, resource, identifiers):
 		with self._observation_lock:
 			if resource in self._resources:
-				before, local_only, order = self._resources[resource]
-				self._reindex(resource, before, identifiers)
-				self._resources[resource] = (identifiers, local_only, order)
-				self._refresh()
+				order, _, before, local_only = self._resources[resource]
+
+				if before != identifiers:
+					self._reindex(resource, before, identifiers)
+					self._resources[resource] = (order, resource, identifiers, local_only)
+					self._refresh()
 
 	# Confirm commits synchronously before queuing asynchronous invalidations.
 	# ----------------------------------------------------------------------

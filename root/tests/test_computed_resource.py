@@ -59,7 +59,7 @@ class TestComputedResource(o.Tester):
 			second_handle = resource.subscribe(second_events.append)
 			assert o.services.Sync._by_id[item.id] == {resource}
 			assert resource.dependencies == frozenset({item.id})
-			assert o.services.Sync._resources[resource][0] == frozenset({item.id})
+			assert o.services.Sync._resources[resource][2] == frozenset({item.id})
 
 			o.services.Sync._dispatch(frozenset({item.id}))
 
@@ -90,8 +90,32 @@ class TestComputedResource(o.Tester):
 
 		assert resource.read() is None
 		assert resource.dependencies == frozenset()
-		assert o.services.Sync._resources[resource][0] == frozenset()
+		assert o.services.Sync._resources[resource][2] == frozenset()
 		handle.cancel()
+
+	# An unchanged dependency scope must preserve the dispatch snapshot and index.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_unchanged_dependencies_preserve_index(cls):
+		resource = o.ComputedResource()
+		handle   = resource.subscribe(lambda changed: None)
+		sync     = o.services.Sync
+
+		try:
+			with o.services.Tracker.track_reads(resource) as observed:
+				observed.value = 1
+
+			snapshot = sync._snapshot
+			entry    = sync._resources[resource]
+
+			with o.services.Tracker.track_reads(resource) as observed:
+				observed.value = 2
+
+			assert resource.read() == 2
+			assert sync._snapshot is snapshot
+			assert sync._resources[resource] is entry
+		finally:
+			handle.cancel()
 
 	# Replace observation scope only after successful new computation.
 	# ----------------------------------------------------------------------
@@ -117,7 +141,7 @@ class TestComputedResource(o.Tester):
 				observed.value = second.count
 
 			assert resource.dependencies == frozenset({second.id})
-			assert o.services.Sync._resources[resource][0] == frozenset({second.id})
+			assert o.services.Sync._resources[resource][2] == frozenset({second.id})
 
 			events.clear()
 			o.services.Sync._dispatch(frozenset({first.id}))
@@ -150,7 +174,7 @@ class TestComputedResource(o.Tester):
 
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset()
-			assert o.services.Sync._resources[resource][0] is None
+			assert o.services.Sync._resources[resource][2] is None
 			handle.cancel()
 		finally:
 			cls._restore_runtime(state)
@@ -202,7 +226,7 @@ class TestComputedResource(o.Tester):
 
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset({first.id})
-			assert o.services.Sync._resources[resource][0] == frozenset({first.id})
+			assert o.services.Sync._resources[resource][2] == frozenset({first.id})
 			handle.cancel()
 		finally:
 			cls._restore_runtime(state)
