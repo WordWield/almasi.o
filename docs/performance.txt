@@ -1,24 +1,29 @@
 LATEST PERFORMANCE RESULTS
 ----------------------------------------------------------------------
-O #19 benchmark (unmodified core)
-Measured O revision: c7f438f8f74fb110df6caf443c1007e9c4dcd6b6
-Almasi revision: 4482d2286ada0400db2fdfe6a3089684968bdcdd
-Run: https://github.com/WordWield/almasi.o/actions/runs/45350881049
+O #19 benchmark (committed native namespace optimization)
+Measured O candidate: c36e55b7da372da061d61fe10c8d272811e46be3
+Almasi revision: 8c3a4018941c01b07152e40962fff74c8f1ff652
+Baseline O: e7fe9a5a43f81334147cc5f91f31a8eef1a9ee76
+Baseline Almasi: 106c98a13d0d6e8e7186145e8ab1473c4ac9b7e7
+Run: https://github.com/WordWield/almasi.o/actions/runs/45351940098
 Measured: 2026-11-24 UTC
 Python 3.12; GitHub Actions Ubuntu; expanded graph workload;
 5 alternating rounds, 1000 iterations, isolated LMDB; median us/operation.
 
-list_getitem         :    0.747
-list_setitem         :   67.139
-dict_getitem         :    1.253
-dict_setitem         :   68.005
-object_attr_get      :    0.019
-object_attr_set      :  146.792
-object_create        :  176.971
-define               :  181.084
+Operation              Baseline    Candidate    Delta
+list_getitem              0.839        0.619   -26.3%
+list_setitem             78.287       76.276    -2.6%
+dict_getitem              1.539        1.295   -15.8%
+dict_setitem             80.423       79.858    -0.7%
+object_attr_get           0.028        0.028    +0.9%
+object_attr_set         172.312      172.582    +0.2%
+object_create           208.982      206.960    -1.0%
+define                  206.786      203.540    -1.6%
 
-Initial record for the per-commit policy; measured runtime code is unchanged
-by this documentation-only commit. Experimental core timings excluded.
+Measured against the compatible master stack; the final commit adds this
+record to the measured candidate without changing its runtime code.
+Small attribute timing differences are below 1%; no substantial regression
+was measured in the standard benchmark.
 
 HISTORICAL NOTES (before per-commit policy)
 ----------------------------------------------------------------------
