@@ -110,7 +110,7 @@ jobs:
           	file.write(report + '\n')
           PY
 
-      - name: Compare native namespace attribute assignment
+      - name: Check native namespace reads after invalidation
         run: |
           python - <<'PY'
           import json
