@@ -256,8 +256,7 @@ class Sync(o.Singleton):
 	# ----------------------------------------------------------------------
 	def publish_change(self, ids, local=True):
 		with self._observation_lock:
-			if self._commits.is_subscribed():
-				self._commits.update(ids, local)
+			self._commits.update((ids, local))
 
 			if not local or self._resources:
 				self._queue.put((ids, local))

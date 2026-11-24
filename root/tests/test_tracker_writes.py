@@ -198,8 +198,8 @@ class TestTrackerWrites(o.Tester):
 				sync.publish_change([1601], local=False)
 				sync.publish_change([1602], local=True)
 				assert callback.call_args_list == [
-					call([1601], False),
-					call([1602], True),
+					call(([1601], False)),
+					call(([1602], True)),
 				]
 			finally:
 				observation()

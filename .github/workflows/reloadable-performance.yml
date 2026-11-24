@@ -135,6 +135,8 @@ jobs:
                   type(o).__app__ = SimpleNamespace(__lib_path__=directory)
                   o.start(tree_mode=False, multiprocess=False)
                   o.Timer.enabled = False
+                  root = o.T.extend('APerfRun')
+                  o.Timer.reset()
                   items = o.List([1, 2, 3, 4, 5])
 
                   cold = time.perf_counter_ns()

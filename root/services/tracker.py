@@ -318,7 +318,9 @@ class Tracker(o.Singleton):
 	# Record committed owners only in the scope's thread and async task.
 	# A full invalidation supersedes all previously collected identities.
 	# ----------------------------------------------------------------------
-	def _record_write_change(self, writes, thread, task, ids, local):
+	def _record_write_change(self, writes, thread, task, changed):
+		ids, local = changed
+
 		if local and thread == threading.get_ident() and task is self._current_task():
 			if ids is None:
 				writes.clear()
@@ -328,8 +330,8 @@ class Tracker(o.Singleton):
 
 	# Preserve read observations when Sync also reports commit origins.
 	# ----------------------------------------------------------------------
-	def _observe_read_change(self, resource, ids, local):
-		resource._observe_change(ids)
+	def _observe_read_change(self, resource, changed):
+		resource._observe_change(changed[0])
 
 	# ======================================================================
 	# PUBLIC METHODS
