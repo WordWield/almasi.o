@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 	type(o).__app__ = SimpleNamespace(__lib_path__=directory)
 	o.start()
 
-	assert not o.services.Sync._subscriptions
+	assert not o.services.Sync._resources
 	assert not any(thread.name == 'o-transport' for thread in threading.enumerate())
 '''
 		result = subprocess.run(

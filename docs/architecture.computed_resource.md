@@ -44,8 +44,8 @@ locally published change cannot pass between conflict checking and the handoff.
 An intersecting change rejects the result with a retryable `RuntimeError`.
 No partially computed value or replacement dependency scope is published.
 Web translates that failure into the existing MCP `-32603` error.
-This reuses `a.Subscribable` registrations; no second dependency index, change
-revision, or replayable function is introduced.
+The synchronous commit channel uses a Resource; no second dependency index,
+change revision, or replayable function is introduced.
 
 **Boundary:** an independent process may commit before its Transport message
 reaches this process. Sync cannot detect that unseen remote commit and makes
@@ -55,18 +55,17 @@ linearizability remains unproven without a cross-process validation mechanism.
 
 ## Subscription source
 
-`resource.subscribe(callback)` calls `o.services.Sync.subscribe(resource,
-callback)`. Each call creates a distinct `a.Subscription` owned and indexed
-by the existing `a.Subscribable` registry inside `o.Sync`.
-A not-yet-computed resource initially uses broad observation, then
-subscriptions are narrowed to its read owner IDs. On invalidation
-`value` becomes `o.Undefined`, and existing observation remains active.
-Successful recomputation refreshes the source's active handles. The
-resource does not keep its own listener registry.
+`ComputedResource` inherits `Resource.subscribe(callback)` and owns its
+listeners. Sync indexes each actively observed resource once. A resource
+without a computed dependency scope starts with broad observation. Successful
+recomputation replaces that resource's scope atomically under the publication
+lock, without changing any listener.
 
-Cancel the listener's source subscription to release observation. Once the
-last registered handle and any external cache references are released,
-the resource is eligible for Python garbage collection.
+On a matching invalidation Sync calls `resource.update(changed_ids)` once.
+The resource invalidates its value to `o.Undefined` before delivering to all
+live listeners. The last canceled listener releases the resource's index
+entry. The synchronous commit channel used by Tracker is separate from
+asynchronous dependency matching.
 
 ## Verification
 

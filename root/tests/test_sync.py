@@ -338,7 +338,8 @@ class TestSync(o.Tester):
 			assert global_q.get(timeout=2) == frozenset({101})
 			assert results.get(timeout=2) == frozenset({101})
 
-			callback.update({102})
+			callback.cancel()
+			callback = sync.subscribe({102}, results.put)
 			pending.setdefault(804, []).append(101)
 			pending.setdefault(804, []).append(102)
 			sync.publish_change(pending.pop(804), local=True)
@@ -768,13 +769,14 @@ class TestSync(o.Tester):
 	# A local-only handle keeps its filter update and never echoes remote IPC.
 	# ----------------------------------------------------------------------
 	@classmethod
-	def test_local_only_handle_update_and_cancel(cls):
+	def test_local_only_scope_replacement_and_cancel(cls):
 		sync     = cls._sync()
 		forwarded = Queue()
 
 		try:
 			handle = sync.subscribe({2001}, forwarded.put, local_only=True)
-			handle.update({2002})
+			handle.cancel()
+			handle = sync.subscribe({2002}, forwarded.put, local_only=True)
 			sync.publish_change([2001], local=True)
 			sync.publish_change([2002], local=False)
 			sync.publish_change([2002], local=True)

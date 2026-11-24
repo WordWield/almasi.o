@@ -1,26 +1,73 @@
 # ==============================================================================
 # SYNC SERVICE
 # ==============================================================================
+# PURPOSE:
 # Queue committed changes from memory and transport through one worker.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Resource dependency matching and committed change delivery.
+# Delegates: Listener registration and callback dispatch to Resource.
 # ==============================================================================
 
 import logging
 import os
 import threading
 
-from queue import SimpleQueue
-from time  import sleep
+from functools import partial
+from queue     import SimpleQueue
+from time      import sleep
 
 from almasi import o
-class Sync(o.Subscribable):
+
+
+class Sync(o.Singleton):
 
 	# ======================================================================
 	# PRIVATE METHODS
 	# ======================================================================
 
-	# Match changed owner IDs through the existing sparse/dense subscription index.
+	# Normalize a watch scope without retaining the caller's mutable set.
 	# ----------------------------------------------------------------------
-	def _matches_generator(self, changed):
+	def _scope(self, identifiers):
+		if identifiers is None:
+			scope = None
+		elif isinstance(identifiers, (set, frozenset)):
+			scope = frozenset(identifiers)
+		else:
+			raise TypeError('Subscription identifiers must be a set, frozenset or None')
+
+		return scope
+
+	# Keep one index entry per observed resource and identifier.
+	# ----------------------------------------------------------------------
+	def _reindex(self, resource, before, after):
+		if before is None:
+			self._broad.discard(resource)
+		else:
+			for identifier in before:
+				bucket = self._by_id[identifier]
+				bucket.discard(resource)
+
+				if not bucket:
+					del self._by_id[identifier]
+
+		if after is None:
+			self._broad.add(resource)
+		else:
+			for identifier in after:
+				self._by_id.setdefault(identifier, set()).add(resource)
+
+	# Snapshot scopes for broad and dense invalidations.
+	# ----------------------------------------------------------------------
+	def _refresh(self):
+		self._snapshot = tuple(
+			(resource, identifiers, local_only)
+			for resource, (identifiers, local_only, _) in self._resources.items()
+		)
+
+	# Match changed owner IDs through the existing sparse/dense resource index.
+	# ----------------------------------------------------------------------
+	def _matches_generator(self, changed, local):
 		changes = changed if changed is None or isinstance(changed, frozenset) else self._scope(changed)
 
 		if changes is None or len(self._snapshot) <= 16:
@@ -31,7 +78,7 @@ class Sync(o.Subscribable):
 					len(self._by_id.get(identifier, ())) for identifier in changes
 				)
 
-				if potential * 2 >= len(self._subscriptions):
+				if potential * 2 >= len(self._resources):
 					candidates = self._snapshot
 				else:
 					matched = set(self._broad)
@@ -40,19 +87,25 @@ class Sync(o.Subscribable):
 						matched.update(self._by_id.get(identifier, ()))
 
 					candidates = tuple(
-						(subscription, subscription._identifiers)
-						for subscription in sorted(matched, key=self._subscriptions.__getitem__)
+						(resource, *self._resources[resource][:2])
+						for resource in sorted(matched, key=lambda resource: self._resources[resource][2])
 					)
 		else:
 			candidates = ()
 
-		for subscription, identifiers in candidates:
+		for resource, identifiers, local_only in candidates:
 			matching = None if changes is None else (
 				changes if identifiers is None else changes & identifiers
 			)
 
-			if (changes is None or matching) and not getattr(subscription, '_commit_observer', False):
-				yield subscription, matching
+			if (changes is None or matching) and (local or not local_only):
+				yield resource, matching
+
+	# Invalidate each affected resource once and let it deliver to its listeners.
+	# ----------------------------------------------------------------------
+	def _dispatch(self, changed, local=True):
+		for resource, matching in self._matches_generator(changed, local):
+			resource.update(matching)
 
 	# One delivery point for local and external invalidations.
 	# ----------------------------------------------------------------------
@@ -64,10 +117,7 @@ class Sync(o.Subscribable):
 				logging.exception('Critical cache invalidation failure')
 				os._exit(1)
 
-		# Producer-specific origin gating stays behind the existing worker.
-		# --------------------------------------------------------------
-		self._delivery_local = local
-		self._dispatch(ids)
+		self._dispatch(ids, local)
 
 	# Merge adjacent invalidations without changing local/remote ordering.
 	# ----------------------------------------------------------------------
@@ -110,7 +160,14 @@ class Sync(o.Subscribable):
 	def initialize(self):
 		# Only the worker handles delivery.
 		# --------------------------------------------------------------
-		self._queue = SimpleQueue()
+		self._subscription_lock = threading.RLock()
+		self._resources         = {}
+		self._snapshot          = ()
+		self._by_id             = {}
+		self._broad             = set()
+		self._next_order        = 0
+		self._commits           = o.Resource()
+		self._queue             = SimpleQueue()
 
 		self._worker = threading.Thread(
 			target = self._run_worker_loop,
@@ -124,61 +181,55 @@ class Sync(o.Subscribable):
 	def resource(self):
 		return o.ComputedResource()
 
-	# Bind a computed resource to its observed O owners, initially broad.
-	# Preserve one independent source Subscription per listener.
+	# Observe a resource once, regardless of its number of listeners.
 	# ----------------------------------------------------------------------
-	def subscribe(self, ids=None, callback=None, local_only=False):
-		if type(local_only) is not bool:
-			raise TypeError('local_only must be bool')
+	def observe(
+		self,
+		resource,
+		identifiers = None,
+		local_only  = False
+	):
+		with self._subscription_lock:
+			if resource.is_subscribed():
+				if resource not in self._resources:
+					if isinstance(resource, o.ComputedResource):
+						identifiers = None if resource.value is o.Undefined and not resource.dependencies else resource.dependencies
 
-		resource = ids if isinstance(ids, o.ComputedResource) else None
+					self._resources[resource] = (identifiers, local_only, self._next_order)
+					self._next_order += 1
+					self._reindex(resource, frozenset(), identifiers)
+					self._refresh()
+			elif resource in self._resources:
+				before, _, _ = self._resources.pop(resource)
+				self._reindex(resource, before, frozenset())
+				self._refresh()
 
-		if resource is not None:
-			if not callable(callback):
-				raise TypeError('Computed resource subscriber must be callable')
-
-			ids             = None if resource.value is o.Undefined and not resource.dependencies else resource.dependencies
-			resource_target = callback
-
-			def resource_callback(changed):
-				resource._invalidate()
-				resource_target(changed)
-
-			callback = resource_callback
-
-		if local_only:
-			if callback is None:
+	# Subscribe to raw owner-ID invalidations without creating a computed value.
+	# ----------------------------------------------------------------------
+	def subscribe(
+		self,
+		ids        = None,
+		callback   = None,
+		local_only = False
+	):
+		if type(local_only) is bool:
+			if callable(ids) and callback is None:
 				callback = ids
 				ids      = None
 
-			if not callable(callback):
-				raise TypeError('Sync subscriber must be callable')
-
-			# Close over the original callback before wrapping remote events.
-			# --------------------------------------------------------------
-			local_target = callback
-
-			def local_callback(changed):
-				if self._delivery_local:
-					local_target(changed)
-
-			callback = local_callback
-
-		with self._subscription_lock:
-			subscription = super().subscribe(ids, callback)
-
-			if resource is not None:
-				subscription._resource = resource
+			scope        = self._scope(ids)
+			resource     = o.Resource(partial(self.observe, identifiers=scope, local_only=local_only))
+			subscription = resource.subscribe(callback)
+		else:
+			raise TypeError('local_only must be bool')
 
 		return subscription
 
-	# Observe commits with their origin before the asynchronous delivery queue.
-	# The callback receives (ids, local); reuse existing subscriptions.
+	# Observe committed changes with their origin before asynchronous delivery.
 	# ----------------------------------------------------------------------
 	def watch_commits(self, callback):
 		with self._subscription_lock:
-			subscription = super().subscribe(None, callback)
-			subscription._commit_observer = True
+			subscription = self._commits.subscribe(callback)
 
 		return subscription
 
@@ -189,23 +240,21 @@ class Sync(o.Subscribable):
 		with self._subscription_lock:
 			resource._publish(identifiers, self)
 
-	# Refresh all current listeners of one computed resource in the source.
-	# Do not maintain a second resource-to-listener index.
+	# Replace the observed resource scope without touching its listeners.
 	# ----------------------------------------------------------------------
 	def update_resource(self, resource, identifiers):
 		with self._subscription_lock:
-			for subscription in tuple(self._subscriptions):
-				if getattr(subscription, '_resource', None) is resource:
-					self._update_subscription(subscription, identifiers)
+			if resource in self._resources:
+				before, local_only, order = self._resources[resource]
+				self._reindex(resource, before, identifiers)
+				self._resources[resource] = (identifiers, local_only, order)
+				self._refresh()
 
-	# Confirm committed changes synchronously to in-flight observations.
-	# Ordinary listeners still receive only worker-delivered invalidations.
+	# Confirm commits synchronously before queuing asynchronous invalidations.
 	# ----------------------------------------------------------------------
 	def publish_change(self, ids, local=True):
 		with self._subscription_lock:
-			for subscription in tuple(self._broad):
-				if getattr(subscription, '_commit_observer', False) and subscription._active:
-					subscription._callback(ids, local)
+			self._commits.update(ids, local)
 
-			if not local or self._subscriptions:
+			if not local or self._resources:
 				self._queue.put((ids, local))

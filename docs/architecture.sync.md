@@ -1,210 +1,49 @@
-# Architecture: Sync — owner-ID invalidation delivery
+# O Sync architecture
 
-**Status:** Implemented in-process notification service with optional host-local
-Transport forwarding; not a durable event log.
+Sync observes committed owner-ID invalidations, not mutations in progress.
+Local Memory commits and incoming Transport invalidations share one worker.
+Remote delivery invalidates cached O entities before notifying resources.
+Adjacent queued events are coalesced without crossing local/remote origin
+boundaries. A None invalidation matches every observed resource, including
+empty dependency scopes.
 
-**Sources:** `root/services/sync.py`, `root/services/memory.py`,
-`root/services/ontology.py`.
-**Tests:** `root/tests/test_sync.py`, `root/tests/test_write_tracking.py`.
-**Related:** [Tracker](architecture.tracker.md),
-[application object API](architecture.public_api.md),
-[ontology forks](architecture.fork.md),
-[Transport](architecture.transport.md).
+## Resource ownership
 
-## Responsibility
+`o.ComputedResource` owns its listeners through `almasi.Resource`.
+Sync observes that resource once while subscribed and indexes its dependency
+IDs. It preserves the sparse/dense index, broad scope, immutable matching
+snapshots and registration order. A successful tracked computation replaces
+the scope under the existing publication lock. A matching change calls
+`resource.update(matching_ids)` once; the computed resource clears its
+cached value before dispatching to its listeners. Last cancellation removes
+the resource and its index entries.
 
-Three separate owners provide reactive state:
+## Raw invalidations
 
-1. **Tracker** records IDs of persistent objects *read* by a computation.
-   It neither intercepts writes nor registers subscribers.
-2. **Memory/Zone** persist changes and supply the affected owner IDs to
-   **Sync**, independently of Tracker scopes.
-3. **A consumer** (for example Web) owns the cached computation, its ID
-   dependencies, subscription lifetime, refetch policy, and network delivery.
+`o.services.Sync.subscribe(ids=None, callback=None, local_only=False)`
+remains available for consumers such as Transport. The callback-only form
+means all IDs. IDs must be a set, frozenset or None; the scope is snapshotted.
+Each call creates a notification-only Resource with that source scope and
+returns its cancellable Subscription. The callback receives matching
+frozenset IDs, or None for full invalidation. Local-only observers never
+receive incoming remote changes. Replace a raw scope by canceling and
+subscribing to the new scope; Subscription has no update method.
 
-The necessary correctness condition within one ontology world is:
+## Commit observations
 
-~~~text
-result_before != result_after  =>  read_ids_before ∩ committed_write_ids != ∅
-~~~
+`Sync.watch_commits(callback)` observes successful commits synchronously
+before they enter the worker. Its callback receives (ids, local). Tracker
+uses that channel to observe writes and to reject a read computation if
+an observed owner changed before the result was committed. Publication
+and computed dependency replacement use the same existing lock.
 
-Tracking the public O object API and reporting corresponding write owners
-are both necessary. Not every public transformation is fully observed;
-see [architecture.public_api.md](architecture.public_api.md). Owner IDs
-are identities, not property names, value diffs or snapshots.
+Ordinary callbacks run on the worker outside the publication lock, with
+failure isolation. Cancellation does not wait for an already executing
+callback. Remote cache invalidation is performed even without listeners.
+Unobserved local changes are not queued for future subscribers.
 
-## Startup, world identity, and naming
+## Verification
 
-After the application has been selected via Almasi:
-
-~~~python
-import o
-
-o.start()
-sync = o.services.Sync
-~~~
-
-`Ontology.start()` initializes one Sync service/worker per world on first
-startup; `Memory` binds to that world's Sync. An `o.fork('alice')` world
-has a distinct Sync, classes, caches and LMDB. Numeric IDs must never be
-mixed across worlds without qualifying world identity. Reopening an existing
-world's Memory does not construct a new worker.
-
-`o.start(sync=False)` is **LMDB disk-flush durability**. It does **not**
-disable the `o.services.Sync` notification service. Likewise,
-`tree_mode=None` restores the persisted topology mode (or defaults to
-graph for a new world), independent of notifications. See
-[architecture.fork.md](architecture.fork.md).
-
-## Subscriber API
-
-Sync extends Almasi's `Subscribable` service. It delegates subscriber
-registration, lifecycle and exception isolation to the shared implementation.
-O implements its own indexed owner-ID matching in `_matches_generator()`;
-its existing worker and transport remain O-owned.
-
-| Call | Contract |
-| --- | --- |
-| `sync.subscribe(callback)` | Observe every owner change |
-| `sync.subscribe(callback=callback)` | Same, explicit keyword |
-| `sync.subscribe({id1, id2}, callback)` | Observe selected owner IDs |
-| `sync.subscribe(callback, local_only=True)` | Transport-only local changes |
-| `subscription.update({id3, id4})` | Replace this registration's owner filter |
-| `subscription.cancel()` | Stop future delivery (idempotent, nonblocking) |
-| `sync.publish_change(ids, local=False)` | Enqueue external invalidation |
-
-Each `subscribe()` returns a distinct `a.Subscription` handle even if the
-same callback is registered more than once. Callbacks are no longer subscription
-keys: callers retain their handle and use its `update()` and `cancel()`
-methods instead of `sync.unsubscribe(callback)`.
-
-The ID filter must be a `set`, `frozenset`, or `None`. All filters are
-snapshotted; changing the input set does not affect a subscription. `None`
-as a filter means all ordinary changes, while an empty set matches no
-ordinary changes. `None` as an event denotes a full invalidation delivered
-to all active subscribers, including empty-filter subscriptions. The value
-`0` is an ordinary ID, not a special sentinel.
-
-O's optional `local_only=True` remains a source-specific modifier. Its
-subscribers see only changes originated by this process; Transport uses it
-to forward invalidations without echoing incoming IPC. Remote changes are
-always queued and invalidate the local cache **before** notifying ordinary
-subscribers.
-
-Ordinary callbacks receive `frozenset[int] | None` and run on the
-`o-sync` worker thread. The internal `Sync.watch_commits(callback)` contract
-is different: a temporary broad `a.Subscription` observes successfully
-committed owner IDs synchronously on the publishing thread, before worker
-delivery. `Sync.commit_resource(resource, identifiers)` uses the same source
-lock to atomically validate observed changes, replace dependency scopes, and
-publish a completed resource value. These calls are reserved for
-`Tracker.track_reads(ComputedResource)`; ordinary clients should use
-`subscribe()` and receive worker-delivered hints as before.
-
-Cross-thread consumers hand off to their own event loop. Dispatch
-uses the filter snapshot from the beginning of each batch. `update()` takes
-effect on later batches. `cancel()` does not wait for a callback already
-running; subsequent deliveries skip canceled registrations. Callbacks can
-register or cancel subscriptions reentrantly. One callback's exception is
-logged without suppressing delivery to the others.
-
-Example of narrowing the initial broad watch after tracked computation:
-
-~~~python
-reads = []
-subscription = sync.subscribe(on_change)
-
-try:
-	with o.services.Tracker.track_reads(reads):
-		value = o.V.counter['count']
-
-	subscription.update(set(reads))
-finally:
-	subscription.cancel()
-~~~
-
-This illustrates O's source API only. The consuming application
-infrastructure owns result caching, refetch policy, and its own view lifecycle.
-
-## Producer API (O infrastructure only)
-
-Application code changes public O objects. `MemoryBatch` collects changed
-owner IDs in a local list during each LMDB write transaction. Nested writes
-share the same list, and failed transactions discard it.
-
-After the outermost successful commit, `MemoryBatch` passes that complete
-list to Sync in a single call, without copying or iterating it:
-
-~~~python
-sync.publish_change(ids, local=True)
-~~~
-
-A local commit without Sync subscribers needs no worker delivery and is
-not queued. When a temporary computed-resource commit observer exists,
-Sync confirms it synchronously after commit, under the source lock, even
-though ordinary delivery stays queued. A subscribed local commit enqueues
-the existing ID list without copying it.
-A remote invalidation is always queued, even without subscribers, because it
-must invalidate cached entities. The worker deduplicates IDs across adjacent
-publications from the same origin and forwards local notifications to Transport.
-Passing `None` requests full invalidation for listeners. Empty write batches,
-missing-key deletions, and empty-prefix deletions do not notify. Read
-transactions do not publish.
-
-If publication fails after commit, the transaction remains committed and
-`MemoryBatch` raises `RuntimeError('LMDB committed; Sync publication failed')`.
-Sync is not a durable event log and cannot guarantee delivery if the process
-crashes after committing.
-
-## Worker and delivery timing
-
-`Sync.initialize()` starts one worker. It blocks on `SimpleQueue.get()`
-until a change arrives. Once an event arrives, a 100 µs window lets further
-commits accumulate; the worker then drains the queue size captured at that
-moment and delivers the resulting bounded burst. There is no idle timer,
-wake flag, busy polling, or pre-commit speculative fallback.
-
-- `local=True`: the worker normalizes IDs, informs matching local subscribers,
-  and notifies Transport through its `local_only` subscription. It does not
-  invalidate the writer's local object cache.
-- `local=False`: the worker invalidates affected cached objects, then informs
-  ordinary subscribers. It does not re-send the change through Transport.
-- Adjacent events from the same origin in one worker cycle are coalesced into
-  one invalidation. Their owner IDs are unioned; `None` dominates that
-  origin's contiguous group. The worker preserves the order of local/remote
-  groups, so remote changes are never echoed to Transport. Subscriber callbacks
-  are invalidation hints, not per-commit events. Individual commit counts and
-  intermediate values are not observable through Sync. Subscriber failures
-  remain isolated.
-- The worker is a daemon thread and runs for the application process lifetime.
-  There is no `Sync.close()`, shutdown sentinel or queue flush on process exit.
-  Events still queued at exit may be lost.
-- If remote `Cache.invalidate(ids)` raises an exception, Sync logs the critical
-  failure and terminates the process with `os._exit(1)` rather than continuing
-  with potentially stale cached entities.
-
-A Sync callback signals that locally committed or externally announced owner
-state may have changed, not that the subscriber has applied the change.
-Consumers re-read committed state through O APIs.
-
-## Verification and non-goals
-
-- `test_sync.py`: filtered/global/empty subscriptions, scope update,
-  None/full invalidation, worker-thread callbacks, origin-preserving burst
-  coalescing, no replay of unobserved changes, commit visibility, abort,
-  concurrent producers, blocking queue delivery, reentrant and failing
-  callbacks, and blocked listeners.
-- `test_write_tracking.py`: actual field, collection, class and instance
-  ownership; transaction nesting, rollback, Zone cache recovery and
-  post-commit failure.
-- `_test_performance_write_tracking.py --sync native` versus
-  `--sync stub` compares native Sync with no-op producer callbacks, not
-  distributed transport or browser latency.
-
-The common subscription mechanism is specified in\n[Almasi Subscribable](https://github.com/apodgorny/almasi/blob/master/docs/architecture.subscribable.md).\n\nSync itself is **in-process, non-durable, non-replayable**. Optional Transport
-provides host-local invalidation forwarding; Sync never references Transport
-or owns its lifecycle. There is no revision ordering, authorization or UI
-responsibility in Sync.
-Consumers supply those capabilities where required. Web integrates it
-through an optional injected pair `Tracker` / `Sync` without making O
-depend on Web; see [Web MCP architecture](https://github.com/apodgorny/web/blob/master/docs/architecture.mcp.md).
+Native Sync, Transport, Tracker and ComputedResource tests cover transaction
+boundaries, cache invalidation, origin filtering, dependency replacement,
+independent listener lifetime, worker ordering and reentrancy.
