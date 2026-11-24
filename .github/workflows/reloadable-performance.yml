@@ -182,3 +182,48 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
               stream.write(report + '\n')
           PY
+
+      - name: Diagnose first-call versus filesystem worker interference
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import statistics
+          import subprocess
+          import sys
+
+          workspace = os.environ['GITHUB_WORKSPACE']
+          temporary = os.environ['RUNNER_TEMP']
+          script = os.path.join(workspace, 'after/root/tests/_diagnose_list_read.py')
+          samples = {}
+          for round_index in range(7):
+              revisions = ('before', 'after') if round_index % 2 == 0 else ('after', 'before')
+              for mode in ('normal', 'settled', 'no_watch'):
+                  for revision in revisions:
+                      root = os.path.join(workspace, revision)
+                      core = os.path.join(workspace, 'almasi_before' if revision == 'before' else 'almasi')
+                      env = {
+                          **os.environ,
+                          'PYTHONPATH': core,
+                          'ALMASI_PATH': os.path.join(temporary, revision),
+                          'EXPECTED_ROOT': root,
+                          'EXPECTED_CORE': core,
+                      }
+                      completed = subprocess.run([sys.executable, script, mode], cwd=root, env=env, capture_output=True, text=True)
+                      if completed.returncode:
+                          raise RuntimeError(completed.stdout + completed.stderr)
+                      result = json.loads(completed.stdout.strip().splitlines()[-1])
+                      print(round_index, revision, mode, result, flush=True)
+                      samples.setdefault((mode, revision), []).append(result)
+          rows = ['| Case | Master | PR | Delta |', '|---|---:|---:|---:|']
+          for mode in ('normal', 'settled', 'no_watch'):
+              for case in samples[(mode, 'before')][0]:
+                  before = statistics.median(x[case] for x in samples[(mode, 'before')])
+                  after = statistics.median(x[case] for x in samples[(mode, 'after')])
+                  delta = (after / before - 1) * 100 if before else 0
+                  rows.append(f'| {mode}/{case} | {before:.3f} | {after:.3f} | {delta:+.1f}% |')
+          report = '\n'.join(rows)
+          print(report)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+              stream.write(report + '\n')
+          PY
