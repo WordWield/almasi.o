@@ -89,12 +89,13 @@ class Sync(o.Singleton):
 
 		for _, resource, identifiers, local_only in candidates:
 			if local or not local_only:
-				matching = None if changes is None else (
-					changes if identifiers is None else changes & identifiers
-				)
-
-				if changes is None or matching:
-					resource.update(matching)
+				if changes is None:
+					resource.update(None)
+				elif changes:
+					if identifiers is None:
+						resource.update(changes)
+					elif not changes.isdisjoint(identifiers):
+						resource.update(changes & identifiers)
 
 	# One delivery point for local and external invalidations.
 	# ----------------------------------------------------------------------
@@ -140,6 +141,16 @@ class Sync(o.Singleton):
 
 			self._deliver(events)
 
+	# Release the synchronous observation resource after its final listener.
+	# ----------------------------------------------------------------------
+	def _unwatch_commits(self, subscription_id):
+		with self._observation_lock:
+			if self._commits is not None:
+				self._commits.unsubscribe(subscription_id)
+
+				if not self._commits.is_subscribed():
+					self._commits = None
+
 	# ======================================================================
 	# PUBLIC METHODS
 	# ======================================================================
@@ -155,7 +166,7 @@ class Sync(o.Singleton):
 		self._by_id            = {}
 		self._broad            = set()
 		self._next_order       = 0
-		self._commits          = o.Resource()
+		self._commits          = None
 		self._queue            = SimpleQueue()
 
 		self._worker = threading.Thread(
@@ -229,7 +240,11 @@ class Sync(o.Singleton):
 	# ----------------------------------------------------------------------
 	def watch_commits(self, callback):
 		with self._observation_lock:
-			cancel = partial(self._commits.unsubscribe, self._commits.subscribe(callback))
+			if self._commits is None:
+				self._commits = o.Resource()
+
+			subscription_id = self._commits.subscribe(callback)
+			cancel          = partial(self._unwatch_commits, subscription_id)
 
 		return cancel
 
@@ -256,7 +271,8 @@ class Sync(o.Singleton):
 	# ----------------------------------------------------------------------
 	def publish_change(self, ids, local=True):
 		with self._observation_lock:
-			self._commits.update((ids, local))
+			if self._commits is not None:
+				self._commits.update((ids, local))
 
 			if not local or self._resources:
 				self._queue.put((ids, local))

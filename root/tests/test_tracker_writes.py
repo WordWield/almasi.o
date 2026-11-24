@@ -22,6 +22,38 @@ class TestTrackerWrites(o.Tester):
 	# PUBLIC METHODS
 	# ======================================================================
 
+	# Keep no synchronous observation resource after the last cancellation.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_commit_observer_lifetime(cls):
+		sync = o.services.Sync
+
+		assert sync._commits is None
+		first  = sync.watch_commits(Mock())
+		second = sync.watch_commits(Mock())
+
+		try:
+			assert sync._commits.is_subscribed()
+			first()
+			assert sync._commits.is_subscribed()
+			second()
+			assert sync._commits is None
+
+			third = sync.watch_commits(Mock())
+
+			try:
+				first()
+				second()
+				assert sync._commits.is_subscribed()
+			finally:
+				third()
+
+			assert sync._commits is None
+		finally:
+			first()
+			second()
+
+
 	# Record owners of successful O writes, without duplicates.
 	# ----------------------------------------------------------------------
 	@classmethod

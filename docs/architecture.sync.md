@@ -103,7 +103,8 @@ Ordinary callbacks receive `frozenset[int] | None` and run on the
 `o-sync` worker thread. The internal `Sync.watch_commits(callback)` contract
 is different: a notification-only Resource owns temporary listeners that
 observe committed owner IDs synchronously on the publishing thread, before
-worker delivery. Its callbacks receive one event tuple `(ids, local)`. `Sync.commit_resource(resource, identifiers)` uses the same source
+worker delivery. Its callbacks receive one event tuple `(ids, local)`. The commit resource
+exists only while observed; publication does not call an empty resource. `Sync.commit_resource(resource, identifiers)` uses the same source
 lock to atomically validate observed changes, replace dependency scopes, and
 publish a completed resource value. These calls are reserved for
 `Tracker.track_reads(ComputedResource)`; ordinary clients should use
