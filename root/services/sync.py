@@ -240,10 +240,9 @@ class Sync(o.Singleton):
 	# ----------------------------------------------------------------------
 	def watch_commits(self, callback):
 		with self._observation_lock:
-			if self._commits is None:
-				self._commits = o.Resource()
-
-			subscription_id = self._commits.subscribe(callback)
+			resource        = self._commits if self._commits is not None else o.Resource()
+			subscription_id = resource.subscribe(callback)
+			self._commits   = resource
 			cancel          = partial(self._unwatch_commits, subscription_id)
 
 		return cancel
