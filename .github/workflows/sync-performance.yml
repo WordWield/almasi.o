@@ -28,6 +28,21 @@ jobs:
           ref: ${{ github.head_ref == 'resource-subscription-ownership' && 'resource-subscription-ownership' || 'master' }}
           path: almasi
 
+      - name: Checkout O baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline_o
+
+      - name: Checkout compatible Almasi baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          repository: WordWield/almasi
+          ref: 106c98a13d0d6e8e7186145e8ab1473c4ac9b7e7
+          path: baseline_almasi
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -40,7 +55,72 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/o" "$RUNNER_TEMP/almasi.o"
 
       - name: 'Benchmark Sync producer and worker overhead'
+        if: github.event_name != 'pull_request'
         working-directory: o
         env:
           ALMASI_PATH: ${{ runner.temp }}
         run: python root/tests/_test_performance_sync_overhead.py --size 3000 --rounds 3
+
+      - name: Compare baseline and candidate in alternating rounds
+        if: github.event_name == 'pull_request'
+        run: |
+          mkdir -p "$RUNNER_TEMP/sync_baseline"
+          ln -s "$GITHUB_WORKSPACE/baseline_o" "$RUNNER_TEMP/sync_baseline/almasi.o"
+
+          python - <<'PY'
+          import json
+          import os
+          import statistics
+          import subprocess
+          import sys
+
+          workspace = os.environ['GITHUB_WORKSPACE']
+          temporary = os.environ['RUNNER_TEMP']
+          runner = os.path.join(workspace, 'o', 'root/tests/_test_performance_sync_overhead.py')
+          environments = {
+              'master': {
+                  **os.environ,
+                  'PYTHONPATH': os.path.join(workspace, 'baseline_almasi'),
+                  'ALMASI_PATH': os.path.join(temporary, 'sync_baseline'),
+              },
+              'PR': {
+                  **os.environ,
+                  'PYTHONPATH': os.path.join(workspace, 'almasi'),
+                  'ALMASI_PATH': temporary,
+              },
+          }
+          cases = {
+              'worker': ['--_json', '--mode', 'worker'],
+              'subscriber': ['--_json', '--mode', 'subscriber'],
+              'paused': ['--_json', '--mode', 'paused'],
+              'dispatch': ['--dispatch'],
+          }
+          samples = {revision: {} for revision in environments}
+
+          for round_index in range(5):
+              revisions = tuple(environments)
+              if round_index % 2:
+                  revisions = tuple(reversed(revisions))
+              for revision in revisions:
+                  for case, arguments in cases.items():
+                      completed = subprocess.run(
+                          [sys.executable, runner, '--size', '3000', *arguments],
+                          env=environments[revision], capture_output=True, text=True,
+                      )
+                      if completed.returncode:
+                          raise RuntimeError(completed.stdout + completed.stderr)
+                      values = json.loads(completed.stdout.strip().splitlines()[-1])
+                      for name, microseconds in values.items():
+                          samples[revision].setdefault(f'{case}/{name}', []).append(microseconds)
+              print(f'Round {round_index + 1}/5 complete', flush=True)
+
+          rows = ['| Operation | Master (us) | PR (us) | Delta |', '|---|---:|---:|---:|']
+          for name in samples['master']:
+              before = statistics.median(samples['master'][name])
+              after = statistics.median(samples['PR'][name])
+              rows.append(f'| {name} | {before:.3f} | {after:.3f} | {(after / before - 1) * 100:+.1f}% |')
+          report = '\n'.join(rows)
+          print(report)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+              stream.write(report + '\n')
+          PY
