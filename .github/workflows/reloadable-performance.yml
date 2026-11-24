@@ -183,7 +183,7 @@ jobs:
               stream.write(report + '\n')
           PY
 
-      - name: Diagnose first-call versus filesystem worker interference
+      - name: Isolate startup observer cost from the first List read
         run: |
           python - <<'PY'
           import json
@@ -196,9 +196,15 @@ jobs:
           temporary = os.environ['RUNNER_TEMP']
           script = os.path.join(workspace, 'after/root/tests/_diagnose_list_read.py')
           samples = {}
-          for round_index in range(5):
+
+          for round_index in range(7):
               revisions = ('before', 'after') if round_index % 2 == 0 else ('after', 'before')
-              for mode in ('normal', 'no_delivery'):
+              modes = ('immediate', 'settled', 'no_watch')
+
+              if round_index % 2:
+                  modes = tuple(reversed(modes))
+
+              for mode in modes:
                   for revision in revisions:
                       root = os.path.join(workspace, revision)
                       core = os.path.join(workspace, 'almasi_before' if revision == 'before' else 'almasi')
@@ -214,11 +220,11 @@ jobs:
                           raise RuntimeError(completed.stdout + completed.stderr)
                       result = json.loads(completed.stdout.strip().splitlines()[-1])
                       print(round_index, revision, mode, result, flush=True)
-                      if round_index == 0:
-                          print(completed.stderr, flush=True)
                       samples.setdefault((mode, revision), []).append(result)
+
           rows = ['| Case | Master | PR | Delta |', '|---|---:|---:|---:|']
-          for mode in ('normal', 'no_delivery'):
+
+          for mode in ('immediate', 'settled', 'no_watch'):
               for case in samples[(mode, 'before')][0]:
                   before = statistics.median(x[case] for x in samples[(mode, 'before')])
                   after = statistics.median(x[case] for x in samples[(mode, 'after')])
