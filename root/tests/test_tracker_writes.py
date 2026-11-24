@@ -11,9 +11,11 @@ import time
 
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from almasi import o
+
+
 class TestTrackerWrites(o.Tester):
 
 	RUNTIME_PREFIX = 'o_tracker_writes_'
@@ -52,7 +54,6 @@ class TestTrackerWrites(o.Tester):
 		finally:
 			first()
 			second()
-
 
 	# Record owners of successful O writes, without duplicates.
 	# ----------------------------------------------------------------------
@@ -220,8 +221,6 @@ class TestTrackerWrites(o.Tester):
 		state = cls._patch_runtime()
 
 		try:
-			from unittest.mock import Mock, call
-
 			callback    = Mock()
 			sync        = o.services.Sync
 			observation = sync.watch_commits(callback)
