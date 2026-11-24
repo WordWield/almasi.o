@@ -1,3 +1,26 @@
+LATEST PERFORMANCE RESULTS
+----------------------------------------------------------------------
+Master benchmark (compatible baseline core)
+Measured O revision: 196f48bd51205f0c969be408051ab5933ca1fe17
+Almasi revision: 106c98a13d0d6e8e7186145e8ab1473c4ac9b7e7
+Run: https://github.com/WordWield/almasi.o/actions/runs/45350881049
+Measured: 2026-11-24 UTC
+Python 3.12; GitHub Actions Ubuntu; expanded graph workload;
+5 alternating rounds, 1000 iterations, isolated LMDB; median us/operation.
+
+list_getitem         :    0.659
+list_setitem         :   66.823
+dict_getitem         :    1.198
+dict_setitem         :   68.596
+object_attr_get      :    0.019
+object_attr_set      :  147.871
+object_create        :  177.727
+define               :  180.992
+
+Initial record for the per-commit policy; measured runtime code is unchanged
+by this documentation-only commit. Experimental core timings excluded.
+
+HISTORICAL NOTES (before per-commit policy)
 ----------------------------------------------------------------------
 Initial:
 
