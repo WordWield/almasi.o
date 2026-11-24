@@ -110,80 +110,7 @@ jobs:
           	file.write(report + '\n')
           PY
 
-      - name: Isolate cold and steady-state List reads
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import statistics
-          import subprocess
-          import sys
-          import textwrap
-
-          program = textwrap.dedent('''
-              import json
-              import os
-              import statistics
-              import tempfile
-              import time
-              from types import SimpleNamespace
-              from almasi import o
-
-              assert os.path.realpath(o.__path__) == os.path.join(os.environ['EXPECTED_ROOT'], 'root')
-
-              with tempfile.TemporaryDirectory(prefix='o_read_perf_') as directory:
-                  type(o).__app__ = SimpleNamespace(__lib_path__=directory)
-                  o.start(tree_mode=False, multiprocess=False)
-                  o.Timer.enabled = False
-                  root = o.T.extend('APerfRun')
-                  o.Timer.reset()
-                  items = o.List([1, 2, 3, 4, 5])
-
-                  cold = time.perf_counter_ns()
-                  for index in range(1000):
-                      items[index % 5]
-                  cold = (time.perf_counter_ns() - cold) / 1000000
-
-                  samples = []
-                  for _ in range(5):
-                      started = time.perf_counter_ns()
-                      for index in range(100000):
-                          items[index % 5]
-                      samples.append((time.perf_counter_ns() - started) / 100000000)
-
-                  print(json.dumps({'cold_1000': cold, 'warm_100000': statistics.median(samples)}))
-                  o.services.Memory.env.close()
-          ''')
-          workspace = os.environ['GITHUB_WORKSPACE']
-          temporary = os.environ['RUNNER_TEMP']
-          samples = {'before': {}, 'after': {}}
-          for round_index in range(7):
-              order = tuple(samples) if round_index % 2 == 0 else tuple(reversed(samples))
-              for revision in order:
-                  environment = {
-                      **os.environ,
-                      'PYTHONPATH': os.path.join(workspace, 'almasi_before' if revision == 'before' else 'almasi'),
-                      'ALMASI_PATH': os.path.join(temporary, revision),
-                      'EXPECTED_ROOT': os.path.join(workspace, revision),
-                  }
-                  completed = subprocess.run([sys.executable, '-c', program], env=environment, capture_output=True, text=True)
-                  if completed.returncode:
-                      raise RuntimeError(completed.stdout + completed.stderr)
-                  for case, elapsed in json.loads(completed.stdout.strip().splitlines()[-1]).items():
-                      samples[revision].setdefault(case, []).append(elapsed)
-
-          rows = ['| List read | Master (us) | PR (us) | Delta |', '|---|---:|---:|---:|']
-          for case in samples['before']:
-              before = statistics.median(samples['before'][case])
-              after = statistics.median(samples['after'][case])
-              rows.append(f'| {case} | {before:.3f} | {after:.3f} | {(after / before - 1) * 100:+.1f}% |')
-          report = '\n'.join(rows)
-          print(report)
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
-              stream.write(report + '\n')
-          PY
-
-      - name: Locate observer startup effects in the read path
+      - name: Isolate atomic value attribute costs
         run: |
           python - <<'PY'
           import json
@@ -199,7 +126,7 @@ jobs:
 
           for round_index in range(5):
               revisions = ('before', 'after') if round_index % 2 == 0 else ('after', 'before')
-              modes = ('immediate', 'idle', 'deferred', 'no_watch')
+              modes = ('immediate', 'no_watch')
 
               if round_index % 2:
                   modes = tuple(reversed(modes))
@@ -220,12 +147,14 @@ jobs:
                       if completed.returncode:
                           raise RuntimeError(completed.stdout + completed.stderr)
                       result = json.loads(completed.stdout.strip().splitlines()[-1])
+                      if round_index == 0:
+                          print(completed.stderr, flush=True)
                       print(round_index, revision, mode, result, flush=True)
                       samples.setdefault((mode, revision), []).append(result)
 
           rows = ['| Case | Master | PR | Delta |', '|---|---:|---:|---:|']
 
-          for mode in ('immediate', 'idle', 'deferred', 'no_watch'):
+          for mode in ('immediate', 'no_watch'):
               for case in samples[(mode, 'before')][0]:
                   before = statistics.median(x[case] for x in samples[(mode, 'before')])
                   after = statistics.median(x[case] for x in samples[(mode, 'after')])
