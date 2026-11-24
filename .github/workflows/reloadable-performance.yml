@@ -110,7 +110,7 @@ jobs:
           	file.write(report + '\n')
           PY
 
-      - name: Isolate entity cache lookup and dictionary layout
+      - name: Isolate chained namespace attribute access
         run: |
           python - <<'PY'
           import json

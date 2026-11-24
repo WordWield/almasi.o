@@ -1,9 +1,10 @@
 # ==============================================================================
-# ENTITY CACHE DIAGNOSTIC
+# NAMESPACE READ DIAGNOSTIC
 # ==============================================================================
-# Locate read overhead and test reversible dictionary layout changes.
+# Isolate dependent attribute reads and reversible namespace dictionary layout.
 # ==============================================================================
 
+import dis
 import json
 import os
 import runpy
@@ -21,7 +22,7 @@ import almasi
 from almasi import o
 
 
-# Measure expressions against the same cached objects and rotate case order.
+# Compare identical expressions in rotating order to avoid phase bias.
 # ------------------------------------------------------------------------------
 def measure(cases, scope):
 	samples = {name: [] for name in cases}
@@ -38,95 +39,85 @@ def measure(cases, scope):
 		for name in order:
 			samples[name].append(timers[name].timeit(number=1) * 10)
 
+	if 'chain' in timers:
+		dis.dis(timers['chain'].inner, adaptive=True, show_caches=True, file=sys.stderr)
+
 	return {name: statistics.median(values) for name, values in samples.items()}
 
 
-# Resolve cached entities while bypassing only namespace lookup.
+# Reorder existing attributes without changing their values or identities.
 # ------------------------------------------------------------------------------
-def get_cached(entities, identifier, undefined):
-	entity = entities.get(identifier, undefined)
+def reorder(instance, name):
+	original = instance.__dict__
+	reordered = {name: original[name]}
 
-	return entity
+	for key, value in original.items():
+		reordered[key] = value
+
+	object.__setattr__(instance, '__dict__', reordered)
+
+	return original
 
 
-# Measure all stages of the ordinary cached read.
+# Compare the original chain, its components and the same logical namespace.
 # ------------------------------------------------------------------------------
 def sample(items):
-	service  = o.services.Entity
-	cache    = o.services.Cache
+	services = o.services
+	cache    = services.Cache
 	entities = cache.entities
-	ids      = items.__items__
-	objects  = tuple(entities[identifier] for identifier in ids)
 	scope    = {
-		'o'          : o,
-		'services'   : o.services,
-		'cache'      : cache,
-		'entities'   : entities,
-		'ids'        : ids,
-		'objects'    : objects,
-		'items'      : items,
-		'service'    : service,
-		'get'        : service.get,
-		'value'      : service.value,
-		'lookup'     : entities.get,
-		'undefined'  : o.Undefined,
-		'get_cached' : get_cached,
+		'o'        : o,
+		'services' : services,
+		'cache'    : cache,
+		'entities' : entities,
+		'items'    : items,
+		'get'      : services.Entity.get,
+		'ids'      : items.__items__,
 	}
-
-	assert all(service.get(identifier) is entity for identifier, entity in zip(ids, objects))
-	assert all(entity.__value__ == index + 1 for index, entity in enumerate(objects))
 
 	cases = {
-		'list'         : 'items[i % 5]',
-		'get'          : 'get(ids[i % 5])',
-		'value'        : 'value(ids[i % 5])',
-		'services'     : 'o.services',
-		'cache'        : 'services.Cache',
-		'entities'     : 'cache.entities',
-		'chain'        : 'o.services.Cache.entities',
-		'dict'         : 'entities.get(ids[i % 5], undefined)',
-		'bound_dict'   : 'lookup(ids[i % 5], undefined)',
-		'full_lookup'  : 'o.services.Cache.entities.get(ids[i % 5], undefined)',
-		'cached_call'  : 'get_cached(entities, ids[i % 5], undefined)',
-		'method'       : 'service.get(ids[i % 5])',
-		'get_method'   : 'service.get',
-		'flag'         : 'objects[i % 5].__class__.__is_atom__',
-		'atom_value'   : 'objects[i % 5].__value__',
-		'unwrap'       : 'entity = objects[i % 5]; result = entity.__value__ if entity.__class__.__is_atom__ else entity',
+		'list'        : 'items[i % 5]',
+		'get'         : 'get(ids[i % 5])',
+		'chain'       : 'o.services.Cache.entities',
+		'first_two'   : 'o.services.Cache',
+		'last_two'    : 'services.Cache.entities',
+		'services'    : 'o.services',
+		'cache'       : 'services.Cache',
+		'entities'    : 'cache.entities',
+		'split'       : 'directory = o.services; registry = directory.Cache; data = registry.entities',
+		'split_left'  : 'directory = o.services; data = directory.Cache.entities',
+		'split_right' : 'registry = o.services.Cache; data = registry.entities',
+		'dict_chain'  : "o.__dict__['services'].__dict__['Cache'].__dict__['entities']",
+		'plain_chain' : 'plain.services.Cache.entities',
 	}
+	scope['plain'] = SimpleNamespace(services=SimpleNamespace(Cache=SimpleNamespace(entities=entities)))
+
+	for instance in (o, services, cache):
+		print({
+			'type'       : type(instance).__name__,
+			'dict_bytes' : sys.getsizeof(instance.__dict__),
+			'keys'       : list(instance.__dict__),
+		}, file=sys.stderr)
+
 	results = measure(cases, scope)
+	cases   = {name: cases[name] for name in ('list', 'get', 'chain', 'first_two', 'last_two')}
 
-	print({
-		'cache_size'  : len(entities),
-		'cache_bytes' : sys.getsizeof(entities),
-		'ids'         : ids,
-		'entity_keys' : list(service.__dict__),
-		'cache_keys'  : list(cache.__dict__),
-		'types'       : [type(entity).__name__ for entity in objects],
-	}, file=sys.stderr)
+	for owner, instance, attribute in (
+		('library', o, 'services'),
+		('directory', services, 'Cache'),
+		('cache', cache, 'entities'),
+	):
+		original = reorder(instance, attribute)
 
-	# Rebuild the same registry in a different insertion order, then restore it.
-	# ----------------------------------------------------------------------
-	reordered = {key: entities[key] for key in ids}
+		try:
+			assert o.services.Cache.entities is entities
 
-	for key, entity in entities.items():
-		reordered[key] = entity
+			for name, elapsed in measure(cases, scope).items():
+				results[owner + '/' + name] = elapsed
+		finally:
+			object.__setattr__(instance, '__dict__', original)
 
-	assert reordered == entities
-
-	cases = {
-		'list'  : 'items[i % 5]',
-		'get'   : 'get(ids[i % 5])',
-		'value' : 'value(ids[i % 5])',
-	}
-
-	try:
-		cache.entities = reordered
-
-		for name, elapsed in measure(cases, scope).items():
-			results['reordered/' + name] = elapsed
-	finally:
-		cache.entities = entities
+	assert o.services.Cache.entities is entities
 
 	for name, elapsed in measure(cases, scope).items():
 		results['restored/' + name] = elapsed
