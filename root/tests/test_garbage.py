@@ -409,8 +409,9 @@ class TestGarbage(o.Tester):
 			cls._restore_memory(state)
 
 
-	# TODO(Garbage refactor): Re-enable this restart test when persistence
-	# follows reachability from o.V. Unattached roots and detached descendants
+	# TODO(Garbage refactor, PR #18): Re-enable this restart test when persistence
+	# follows the design in docs/future.drastic_speedup.md (PR #18 branch).
+	# Unattached roots and detached descendants
 	# currently survive restart; retained descendants must still survive.
 	# This is a known runtime defect, not a changed persistence contract.
 	# # Verify unretained objects disappear after a fresh process opens LMDB.
