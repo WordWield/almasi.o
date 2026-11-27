@@ -27,20 +27,6 @@ jobs:
           ref: master
           path: almasi
 
-      - name: Checkout baseline Core
-        uses: actions/checkout@v4
-        with:
-          repository: WordWield/almasi.a
-          ref: b75dbb3835475c3dd5788ecfe7152ab28d08c534
-          path: baseline-core
-
-      - name: Checkout candidate Core
-        uses: actions/checkout@v4
-        with:
-          repository: WordWield/almasi.a
-          ref: 59fdb436fa9f26cada65cd1e0c79832169e0b016
-          path: candidate-core
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -48,12 +34,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -e ./almasi -r ./after/requirements.txt -r ./candidate-core/requirements.txt
+          python -m pip install -e ./almasi -r ./after/requirements.txt
           mkdir -p "$RUNNER_TEMP/before" "$RUNNER_TEMP/after"
           ln -s "$GITHUB_WORKSPACE/before" "$RUNNER_TEMP/before/almasi.o"
           ln -s "$GITHUB_WORKSPACE/after" "$RUNNER_TEMP/after/almasi.o"
-          ln -s "$GITHUB_WORKSPACE/baseline-core" "$RUNNER_TEMP/before/almasi.a"
-          ln -s "$GITHUB_WORKSPACE/candidate-core" "$RUNNER_TEMP/after/almasi.a"
 
       - name: Benchmark the actual baseline and candidate
         run: |
