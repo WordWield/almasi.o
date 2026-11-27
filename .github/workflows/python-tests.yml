@@ -28,6 +28,13 @@ jobs:
           ref: master
           path: almasi
 
+      - name: Checkout Core Strict
+        uses: actions/checkout@v4
+        with:
+          repository: WordWield/almasi.a
+          ref: 4b4a3807dca01f92c618115b27ee82d3785cff4b
+          path: core
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -39,7 +46,10 @@ jobs:
           python -m pip install -r ./o/requirements.txt
 
       - name: Expose the checked-out O library to Almasi
-        run: ln -s "$GITHUB_WORKSPACE/o" "$RUNNER_TEMP/almasi.o"
+        run: |
+          ln -s "$GITHUB_WORKSPACE/core" "$RUNNER_TEMP/almasi.a"
+          ln -s "$GITHUB_WORKSPACE/o" "$RUNNER_TEMP/almasi.o"
+          python -m pip install -r "$GITHUB_WORKSPACE/core/requirements.txt"
 
       - name: Verify resource, Sync, Tracker and Transport contracts
         working-directory: o/root
