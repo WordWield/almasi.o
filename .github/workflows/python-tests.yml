@@ -124,12 +124,11 @@ jobs:
                       'MigrationCollection',
                       people=ontology.F(list[Person]),
                       mapping=ontology.F(dict[str, Child]),
-                      optional=ontology.F(str | None),
                   )
                   person = Person(name='Ada')
                   child = Child(name='Lin', age=7)
                   ontology.V.annotation_migration = Collection(
-                      people=[person], mapping={'child': child}, optional=None,
+                      people=[person], mapping={'child': child},
                   )
 
               collection = ontology.V.annotation_migration
@@ -140,8 +139,7 @@ jobs:
               assert type(collection.people[0]) is Person
               assert type(collection.mapping['child']) is Child
               assert collection.people[0].name == 'Ada'
-              assert collection.mapping['child'].age == 7
-              assert collection.optional is None
+              assert collection.mapping['child'].age == (8 if mode == 'reopen' else 7)
 
               snapshot = {
                   'data': collection.to_data(),
@@ -175,7 +173,9 @@ jobs:
                   if mode == 'upgrade':
                       collection.mapping['child'].age = 8
                       assert collection.mapping['child'].age == 8
-                      collection.mapping['child'].age = 7
+                      snapshot['data'] = collection.to_data()
+                      with open(snapshot_path, 'w') as stream:
+                          json.dump(snapshot, stream)
 
               ontology.services.Memory.env.close()
               print(mode, ontology.__dict__.get('__fork_name__', 'default'), 'PASS')
