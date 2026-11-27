@@ -1,7 +1,22 @@
+# ==============================================================================
+# TEST JSON SCHEMA
+# ==============================================================================
+# PURPOSE:
+# Verify the structural and executable contracts of exported O schemas.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Regression assertions for schema generation and accepted data.
+# Delegates: Schema validation to the existing jsonschema dependency.
+# ==============================================================================
+
 import os
 import runpy
 
+from jsonschema import Draft202012Validator
+
 from almasi import o
+
+
 class TestJsonSchema(o.Tester):
 	RUNTIME_PREFIX = 'o_json_schema_'
 
@@ -223,7 +238,112 @@ class TestJsonSchema(o.Tester):
 		finally:
 			cls._restore_runtime(state)
 
-	# Compare representative schemas directly with the archived implementation.
+	# Accept missing, null and valid records, but not arbitrary child data.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_nullable_record_validation(cls):
+		state = cls._patch_runtime()
+
+		try:
+			root_name = os.path.basename(state['root'])
+			Child     = o.T.extend(f'JsonSchemaNullableChild_{root_name}', name=str)
+			Parent    = o.T.extend(
+				f'JsonSchemaNullableParent_{root_name}',
+				required = o.F(Child),
+				optional = o.F(Child, default=None),
+			)
+
+			for schema in (Parent.to_json_schema(), Parent.to_prompt_schema()):
+				Draft202012Validator.check_schema(schema)
+				validator = Draft202012Validator(schema)
+				child_ref = {'$ref': f'#/$defs/{Child.__proto__}'}
+
+				assert schema['properties']['required'] == child_ref
+				assert schema['properties']['optional'] == {
+					'anyOf': [child_ref, {'type': 'null'}]
+				}
+
+				for value in ({}, {'optional': None}, {'optional': {'name': 'Grace'}}):
+					assert validator.is_valid({'required': {'name': 'Ada'}, **value})
+
+				for value in (False, 42, [], {}, {'name': 42}, {'name': 'Grace', 'extra': True}):
+					assert not validator.is_valid({'required': {'name': 'Ada'}, 'optional': value})
+
+				assert not validator.is_valid({'required': None})
+				assert not validator.is_valid({'optional': None})
+
+		finally:
+			cls._restore_runtime(state)
+
+	# Preserve the reference at every recursive level, including null leaves.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_nullable_recursive_record_validation(cls):
+		state = cls._patch_runtime()
+
+		try:
+			root_name = os.path.basename(state['root'])
+			Node      = o.T.extend(f'JsonSchemaNullableNode_{root_name}', name=str)
+
+			Node.child = o.F(Node, default=None)
+
+			schema    = Node.to_json_schema()
+			validator = Draft202012Validator(schema)
+
+			Draft202012Validator.check_schema(schema)
+
+			for value in (
+				{'name': 'root'},
+				{'name': 'root', 'child': None},
+				{'name': 'root', 'child': {'name': 'leaf'}},
+				{'name': 'root', 'child': {'name': 'leaf', 'child': None}},
+			):
+				assert validator.is_valid(value), value
+
+			for value in (
+				{'name': 'root', 'child': {}},
+				{'name': 'root', 'child': {'name': 'leaf', 'child': 1}},
+				{'name': 'root', 'child': {'name': 'leaf', 'extra': True}},
+			):
+				assert not validator.is_valid(value), value
+
+		finally:
+			cls._restore_runtime(state)
+
+	# Preserve existing nullable primitive, collection and union semantics.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_nullable_value_validation(cls):
+		state = cls._patch_runtime()
+
+		try:
+			root_name = os.path.basename(state['root'])
+			Example   = o.T.extend(
+				f'JsonSchemaNullableValues_{root_name}',
+				text   = o.F(str, default=None),
+				items  = o.F(list[int], default=None),
+				values = o.F(dict[str, int], default=None),
+				union  = o.F(str | int | None),
+			)
+
+			schema    = Example.to_json_schema()
+			validator = Draft202012Validator(schema)
+
+			Draft202012Validator.check_schema(schema)
+
+			assert validator.is_valid({})
+			assert validator.is_valid({'text': None, 'items': None, 'values': None, 'union': None})
+			assert validator.is_valid({'text': 'ok', 'items': [1], 'values': {'a': 1}, 'union': 2})
+			assert validator.is_valid({'union': 'ok'})
+			assert not validator.is_valid({'text': 1})
+			assert not validator.is_valid({'items': ['bad']})
+			assert not validator.is_valid({'values': {'a': 'bad'}})
+			assert not validator.is_valid({'union': []})
+
+		finally:
+			cls._restore_runtime(state)
+
+	# Compare representative schemas with the archive except its known defect.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_schema_matches_preserved_implementation(cls):
@@ -248,8 +368,18 @@ class TestJsonSchema(o.Tester):
 				with_default = o.F(str, default='ready'),
 			)
 
-			for target in (o.Int, o.Str, o.Null, Child, Parent):
+			for target in (o.Int, o.Str, o.Null, Child):
 				assert target.to_json_schema() == legacy.build(target)
+
+			# The archive combines a record reference and null conjunctively.
+			# Preserve every other constraint, but correct this alternative.
+			# --------------------------------------------------------------
+			expected = legacy.build(Parent)
+			expected['properties']['second'] = {
+				'anyOf': [{'$ref': f'#/$defs/{Child.__proto__}'}, {'type': 'null'}]
+			}
+
+			assert Parent.to_json_schema() == expected
 
 			assert (
 				o.JsonSchema._get_annotation_schema(str | int | None, {}, ())

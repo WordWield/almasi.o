@@ -1,3 +1,14 @@
+# ==============================================================================
+# JSON SCHEMA
+# ==============================================================================
+# PURPOSE:
+# Export O type declarations as JSON Schema for data validation.
+#
+# RESPONSIBILITY BOUNDARIES:
+# Owns: Schema projection, definitions, references and field requiredness.
+# Delegates: Type and field metadata to O; instance validation to consumers.
+# ==============================================================================
+
 from almasi import o
 UNDEFINED = o.Undefined
 
@@ -200,12 +211,15 @@ class JsonSchema(o.Module):
 				if 'null' not in schema_type:
 					schema['type'] = [*schema_type, 'null']
 		else:
-			any_of   = list(schema.get('anyOf', ()))
+			# A reference is a constraint, not an alternative to its siblings.
+			# --------------------------------------------------------------
+			any_of   = list(schema['anyOf']) if set(schema) == {'anyOf'} else [schema]
 			has_null = any(item.get('type') == 'null' for item in any_of)
 
 			if not has_null:
-				any_of.append({ 'type' : 'null' })
-				schema['anyOf'] = any_of
+				any_of.append({'type': 'null'})
+
+			schema = {'anyOf': any_of}
 
 		return schema
 
