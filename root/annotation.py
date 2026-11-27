@@ -231,7 +231,8 @@ class Annotation(o.Module):
 			result = self.annotation.__name__
 		return result
 
-	@classmethod
+	# Recognize supported type declarations without constructing an annotation.
+	# ----------------------------------------------------------------------
 	@classmethod
 	def is_annotation(cls, notation):
 		return (
