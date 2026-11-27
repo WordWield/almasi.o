@@ -189,41 +189,46 @@ class TestCast(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_strict_data_boundary(cls):
-		class Example(o.base.Strict):
-
-			def increment(self, value: o.Int) -> o.Int:
-				return o.Int(value.to_data() + 1)
-
-			def echo(self, value):
-				return value
-
-		example = Example()
-
-		assert issubclass(o.base.Strict, a.base.Strict)
-		assert example.echo('ordinary') == 'ordinary'
-		assert example.strict_schema(o.Int) == o.Int.to_json_schema()
-		assert example.strict_schema(type(None)) == {'type': 'null'}
-		assert example.strict_decode(type(None), None) is None
-		assert example.strict_encode(type(None), None) is None
-
-		value = example.strict_decode(o.Int, 3)
-		assert isinstance(value, o.Int)
-		assert example.strict_encode(o.Int, example.strict_call(example.increment, value)) == 4
-
-		for invalid in ('3', True, None):
-			try:
-				example.strict_decode(o.Int, invalid)
-			except ValidationError:
-				pass
-			else:
-				assert False, 'Invalid JSON was converted to an O entity'
+		state = cls._patch_runtime()
 
 		try:
-			example.strict_call(example.increment, 3)
-		except TypeError:
-			pass
-		else:
-			assert False, 'Strict Python invocation coerced an input'
+			class Example(o.base.Strict):
+
+				def increment(self, value: o.Int) -> o.Int:
+					return o.Int(value.to_data() + 1)
+
+				def echo(self, value):
+					return value
+
+			example = Example()
+
+			assert issubclass(o.base.Strict, a.base.Strict)
+			assert example.echo('ordinary') == 'ordinary'
+			assert example.strict_schema(o.Int) == o.Int.to_json_schema()
+			assert example.strict_schema(type(None)) == {'type': 'null'}
+			assert example.strict_decode(type(None), None) is None
+			assert example.strict_encode(type(None), None) is None
+
+			value = example.strict_decode(o.Int, 3)
+			assert isinstance(value, o.Int)
+			assert example.strict_encode(o.Int, example.strict_call(example.increment, value)) == 4
+
+			for invalid in ('3', True, None):
+				try:
+					example.strict_decode(o.Int, invalid)
+				except ValidationError:
+					pass
+				else:
+					assert False, 'Invalid JSON was converted to an O entity'
+
+			try:
+				example.strict_call(example.increment, 3)
+			except TypeError:
+				pass
+			else:
+				assert False, 'Strict Python invocation coerced an input'
+		finally:
+			cls._restore_runtime(state)
 
 
 if __name__ == '__main__':
