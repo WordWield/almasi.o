@@ -204,25 +204,27 @@ class TestCast(o.Tester):
 
 			assert issubclass(o.base.Strict, a.base.Strict)
 			assert example.echo('ordinary') == 'ordinary'
-			assert example.strict_schema(o.Int) == o.Int.to_json_schema()
-			assert example.strict_schema(type(None)) == {'type': 'null'}
-			assert example.strict_decode(type(None), None) is None
-			assert example.strict_encode(type(None), None) is None
+			assert example.__get_schema__(o.Int) == o.Int.to_json_schema()
+			assert example.__get_schema__(a.Resource[o.Int]) == o.Int.to_json_schema()
+			assert example.__get_schema__(type(None)) == {'type': 'null'}
+			assert example.__to_o__(type(None), None) is None
+			assert example.__from_o__(type(None), None) is None
 
-			value = example.strict_decode(o.Int, 3)
+			value = example.__to_o__(o.Int, 3)
 			assert isinstance(value, o.Int)
-			assert example.strict_encode(o.Int, example.strict_call(example.increment, value)) == 4
+			assert example.__from_o__(a.Resource[o.Int], value) == 3
+			assert example.__from_o__(o.Int, example.__call_method__(example.increment, value)) == 4
 
 			for invalid in ('3', True, None):
 				try:
-					example.strict_decode(o.Int, invalid)
+					example.__to_o__(o.Int, invalid)
 				except ValidationError:
 					pass
 				else:
 					assert False, 'Invalid JSON was converted to an O entity'
 
 			try:
-				example.strict_call(example.increment, 3)
+				example.__call_method__(example.increment, 3)
 			except TypeError:
 				pass
 			else:
