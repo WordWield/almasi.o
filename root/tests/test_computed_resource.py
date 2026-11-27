@@ -78,6 +78,41 @@ class TestComputedResource(o.Tester):
 		finally:
 			cls._restore_runtime(state)
 
+	# The first native subscription cannot trust a previously unobserved value.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_first_subscription_invalidates_cached_value(cls):
+		resource = o.resources.Computed()
+
+		with o.services.Tracker.track_reads(resource) as observed:
+			observed.value = 7
+
+		assert resource.read() == 7
+
+		first = resource.subscribe(lambda changed: None)
+
+		try:
+			assert resource.read() is o.Undefined
+
+			with o.services.Tracker.track_reads(resource) as observed:
+				observed.value = 8
+
+			second = resource.subscribe(lambda changed: None)
+
+			try:
+				assert resource.read() == 8
+			finally:
+				resource.unsubscribe(second)
+		finally:
+			resource.unsubscribe(first)
+
+		reopened = resource.subscribe(lambda changed: None)
+
+		try:
+			assert resource.read() is o.Undefined
+		finally:
+			resource.unsubscribe(reopened)
+
 	# Preserve None as a valid cached value, not an absent result.
 	# ----------------------------------------------------------------------
 	@classmethod
