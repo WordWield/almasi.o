@@ -31,6 +31,46 @@ Application controllers orchestrate services. Application services read and modi
 
 Trusted server infrastructure may require administrative APIs (authorization, migrations, storage operations). **Administrative use must not be mistaken for dependency-safe application data access.**
 
+## Infrastructure API: typed operations
+
+`o.services.Operation` interprets the original bound async Python method.
+There is no separate operation object, registration or method cache.
+Start O before using the service. A protocol adapter must first select
+a permitted method and enforce its own authorization and publication rules.
+
+For an ordinary method declared `async def increment(self, step: o.Int) -> o.Int`,
+assuming `controller` is its owning instance:
+
+```python
+from almasi import o
+
+method = controller.increment
+result = await o.services.Operation.invoke(method, 4)
+data   = o.services.Operation.encode(method, result)
+```
+
+The service accepts the raw JSON value, not an RPC envelope. The result
+is an actual O value; encoding returns its plain JSON-compatible data.
+
+| Method | Contract |
+| --- | --- |
+| get_input(method) | Tuple of input parameter name (or None), concrete O type (or None), and whether keyword-only trusted user_id is declared. |
+| get_output(method) | Tuple of concrete O content type or type(None), and whether the method returns a.Resource[O type]. |
+| get_schema(data_type) | Raw JSON Schema, or None for absent input; type(None) yields the null schema. |
+| validate_input(method, value=a.Undefined) | Validate raw JSON against the declared type, distinguishing omitted input from JSON null. |
+| invoke(method, value=a.Undefined, *, user_id=None) | Validate before conversion and execution, bind the actual parameter, supply trusted identity only when declared, and check the returned type. |
+| encode(method, value) | Validate and serialize the actual typed result or the data obtained from a carrier. Does not read carriers. |
+
+Methods must have zero or one required concrete O data parameter, optional
+keyword-only user_id, and an explicit supported return annotation. Invalid
+declarations and result types raise TypeError; invalid data raises
+jsonschema.ValidationError (non-finite JSON values raise ValueError).
+Carriers retain their native identity and lifetime; the service neither
+subscribes nor reads them. Trusted identity is supplied by the adapter,
+not by remote request metadata. Protocol adapters own their wire envelopes,
+decorators and operation selection. The service does not authorize calls.
+O's existing persistent value lifetime applies to constructed input values.
+
 ## Public API: ordinary applications
 
 ### Initialize and select a world
