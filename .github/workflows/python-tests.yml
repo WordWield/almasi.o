@@ -35,6 +35,20 @@ jobs:
           ref: 67a82841925c24a76fb41383de14fdb9820148b6
           path: core
 
+      - name: Checkout pre-Annotation O
+        uses: actions/checkout@v4
+        with:
+          repository: WordWield/almasi.o
+          ref: b08cbe9f3358f842be6bf641a6daeb5a6d5b8aff
+          path: previous_o
+
+      - name: Checkout pre-Annotation Core
+        uses: actions/checkout@v4
+        with:
+          repository: WordWield/almasi.a
+          ref: 14d750dedd512968c89e0da056fb116500f2d9f1
+          path: previous_core
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -79,3 +93,93 @@ jobs:
         env:
           ALMASI_PATH: ${{ runner.temp }}
         run: python o/root/test.py
+
+      - name: Verify old and new O reopen the same persistent annotation graph
+        run: |
+          work="$(mktemp -d "$RUNNER_TEMP/annotation-migration.XXXXXX")"
+          trap 'rm -rf -- "$work"' EXIT
+          mkdir -p "$work/previous" "$work/current"
+          ln -s "$GITHUB_WORKSPACE/previous_core" "$work/previous/almasi.a"
+          ln -s "$GITHUB_WORKSPACE/previous_o" "$work/previous/almasi.o"
+          ln -s "$GITHUB_WORKSPACE/core" "$work/current/almasi.a"
+          ln -s "$GITHUB_WORKSPACE/o" "$work/current/almasi.o"
+          cat > "$work/check.py" <<'PY'
+          import json
+          import os
+          import sys
+          from types import SimpleNamespace
+          from almasi import o
+
+          directory, mode = sys.argv[1:]
+          type(o).__app__ = SimpleNamespace(__lib_path__=directory)
+
+          for ontology in (o, o.fork('migration_fork')):
+              ontology.start(sync=True)
+              snapshot_path = os.path.join(directory, ontology.__dict__.get('__fork_name__', 'default') + '.json')
+
+              if mode == 'write':
+                  Person = ontology.T.extend('MigrationPerson', name=str)
+                  Child = Person.extend('Child', age=int)
+                  Collection = ontology.T.extend(
+                      'MigrationCollection',
+                      people=ontology.F(list[Person]),
+                      mapping=ontology.F(dict[str, Child]),
+                      optional=ontology.F(str | None),
+                  )
+                  person = Person(name='Ada')
+                  child = Child(name='Lin', age=7)
+                  ontology.V.annotation_migration = Collection(
+                      people=[person], mapping={'child': child}, optional=None,
+                  )
+
+              collection = ontology.V.annotation_migration
+              Collection = type(collection)
+              Person = ontology.T.MigrationPerson
+              Child = Person.Child
+              assert Collection is ontology.T.MigrationCollection
+              assert type(collection.people[0]) is Person
+              assert type(collection.mapping['child']) is Child
+              assert collection.people[0].name == 'Ada'
+              assert collection.mapping['child'].age == 7
+              assert collection.optional is None
+
+              snapshot = {
+                  'data': collection.to_data(),
+                  'ids': [Person.id, Child.id, Collection.id, collection.id, collection.people[0].id, collection.mapping['child'].id],
+                  'fields': {},
+                  'annotations': [],
+              }
+              for name in ('people', 'mapping'):
+                  field_type = getattr(Collection._, name).type
+                  annotation = field_type.__annotation__
+                  snapshot['fields'][name] = [
+                      field_type.id, field_type.__proto__,
+                      ontology.services.Memory.get(field_type.__proto__ + '.__annotation__'),
+                      annotation.id, str(annotation), hash(annotation), annotation.to_source(),
+                  ]
+              assert Collection._.people.type.__annotation__.annotation == list[Person]
+              assert Collection._.mapping.type.__annotation__.annotation == dict[str, Child]
+
+              for declaration in (list[Person], dict[str, Child], list[Person | Child | None], tuple[Child, ...]):
+                  annotation = ontology.Annotation(declaration)
+                  restored = ontology.Annotation(annotation.to_source())
+                  assert restored.annotation == declaration
+                  snapshot['annotations'].append([annotation.id, str(annotation), hash(annotation), annotation.to_source()])
+
+              if mode == 'write':
+                  with open(snapshot_path, 'w') as stream:
+                      json.dump(snapshot, stream)
+              else:
+                  with open(snapshot_path) as stream:
+                      assert snapshot == json.load(stream), (mode, snapshot)
+                  if mode == 'upgrade':
+                      collection.mapping['child'].age = 8
+                      assert collection.mapping['child'].age == 8
+                      collection.mapping['child'].age = 7
+
+              ontology.services.Memory.env.close()
+              print(mode, ontology.__dict__.get('__fork_name__', 'default'), 'PASS')
+          PY
+          ALMASI_PATH="$work/previous" python "$work/check.py" "$work" write
+          ALMASI_PATH="$work/current" python "$work/check.py" "$work" upgrade
+          ALMASI_PATH="$work/previous" python "$work/check.py" "$work" reopen
