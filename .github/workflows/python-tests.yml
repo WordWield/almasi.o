@@ -2,7 +2,7 @@ name: O Python tests
 
 on:
   push:
-    branches: [master, split-core]
+    branches: [master, split-core, typed-operation-service]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: WordWield/almasi.a
-          ref: 14d750dedd512968c89e0da056fb116500f2d9f1
+          ref: cfb9dc94df967f39162af7a0e406518fe78f1c16
           path: core
 
       - name: Set up Python
