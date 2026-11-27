@@ -49,19 +49,19 @@ class Counter(o.base.Strict):
 
 
 counter = Counter()
-step    = counter.strict_decode(o.Int, 4)
-result  = counter.strict_call(counter.increment, step)
-assert counter.strict_encode(o.Int, result) == 5
+step    = counter.__to_o__(o.Int, 4)
+result  = counter.__call_method__(counter.increment, step)
+assert counter.__from_o__(o.Int, result) == 5
 ```
 
 | Method | Contract |
 | --- | --- |
-| strict_schema(data_type) | Existing O JSON Schema for a concrete O type, or the null schema for type(None). |
-| strict_validate(data_type, value) | Check external JSON without constructing an O entity. |
-| strict_decode(data_type, value) | Validate JSON, then use Entity.cast to construct the typed value. |
-| strict_encode(data_type, value) | Check the actual type, then serialize and validate its JSON data. |
+| __get_schema__(data_type) | Existing O JSON Schema for a concrete O type, Resource[T] content, or the null schema for type(None). |
+| __validate__(data_type, value) | Check external JSON without constructing an O entity. |
+| __to_o__(data_type, value) | Validate JSON, then use Entity.cast to construct the typed value. |
+| __from_o__(data_type, value) | Check the actual type, then serialize and validate its JSON data. |
 
-Inherited `strict_signature`, `strict_check` and `strict_call` implement
+Inherited Module reflection and Strict `__call_method__` implement
 ordinary Python checks. Sync and async methods are supported without
 constraining argument count, argument names or protocol identity.
 Ordinary calls are unchanged. External JSON validation rejects incorrect
@@ -71,6 +71,10 @@ type raises TypeError; invalid JSON raises jsonschema.ValidationError
 never read by type checking; their content is encoded explicitly after
 a read. Existing O persistent value lifetime still applies.
 MCP and HTTP own their protocol envelopes and publication rules.
+
+### Annotation persistence
+
+`o.Annotation` extends `a.Annotation` only to resolve stored expressions in the owning ontology and render persistent class addresses (`__proto__`). Matching, cast, canonical ID and hash remain inherited. `to_source()` and restoration from a trusted string preserve nested O types and fork-local resolution. Never evaluate untrusted annotation strings.
 
 ## Public API: ordinary applications
 
