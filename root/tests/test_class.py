@@ -4,6 +4,7 @@
 # Verify ontology class creation, persistence, and reconstruction.
 # ==============================================================================
 
+import asyncio
 import os
 import shutil
 import sys
@@ -88,6 +89,12 @@ class TestClass(o.Tester):
 		result = getattr(o.tests_runtime, class_name)
 
 		return result
+
+	# Publish a source change within the Filesystem observation context.
+	# ----------------------------------------------------------------------
+	@classmethod
+	async def _publish_source_change(cls, filesystem, path):
+		filesystem._process_changed_paths(o.__path__, {path})
 
 	# ======================================================================
 	# PUBLIC METHODS
@@ -524,39 +531,37 @@ class TestClass(o.Tester):
 				'\t\treturn \'before\'\n'
 			)
 
-			# Keep background filesystem deliveries out of this manual reload.
-			# The subscription must be canceled before the lock is released.
+			# Deliver the source event through the canonical observation context.
 			# --------------------------------------------------------------
 			filesystem = core.services.Filesystem
 
-			with filesystem._observation_lock:
-				try:
-					with patch.object(type(filesystem), '_watch', return_value=None):
-						assert o.T.__bases__ == (o.TReloadableModule,)
-						assert '__original_module__' not in o.TReloadableModule.__dict__
-						Original     = cls._source_class(state, class_name, source)
-						subscription = Original.__dict__.get('_reload_subscription')
-						assert subscription is not None
-						assert Original.__original_module__ == os.path.realpath(path)
+			try:
+				with patch.object(type(filesystem), '_watch', return_value=None):
+					assert o.T.__bases__ == (o.TReloadableModule,)
+					assert '__original_module__' not in o.TReloadableModule.__dict__
+					Original     = cls._source_class(state, class_name, source)
+					subscription = Original.__dict__.get('_reload_subscription')
+					assert subscription is not None
+					assert Original.__original_module__ == os.path.realpath(path)
 
-						instance = Original(name='alex')
-						assert instance.read() == 'before'
+					instance = Original(name='alex')
+					assert instance.read() == 'before'
 
-						with open(path, 'w', encoding='utf-8') as stream:
-							stream.write(source.replace('before', 'after'))
+					with open(path, 'w', encoding='utf-8') as stream:
+						stream.write(source.replace('before', 'after'))
 
-						filesystem._changed_paths(o.__path__, {path: 'modified'})
+					asyncio.run_coroutine_threadsafe(cls._publish_source_change(filesystem, path), filesystem._loop).result(timeout=5)
 
-						Updated = type(instance)
-						assert Updated is not Original
-						assert instance.name == 'alex'
-						assert instance.read() == 'after'
-						assert o.services.Cache.entities[Original.id] is Updated
-						assert getattr(o.tests_runtime, class_name) is Updated
-						assert Updated._reload_subscription is subscription
-				finally:
-					if subscription is not None:
-						Original._reload_file.unsubscribe(subscription)
+					Updated = type(instance)
+					assert Updated is not Original
+					assert instance.name == 'alex'
+					assert instance.read() == 'after'
+					assert o.services.Cache.entities[Original.id] is Updated
+					assert getattr(o.tests_runtime, class_name) is Updated
+					assert Updated._reload_subscription is subscription
+			finally:
+				if subscription is not None:
+					Original._reload_file.unsubscribe(subscription)
 		finally:
 			cls._restore_runtime(state)
 
