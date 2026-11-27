@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: WordWield/almasi.a
-          ref: 67a82841925c24a76fb41383de14fdb9820148b6
+          ref: 55c83538d6025352220e50b5d0d3a2560567453b
           path: core
 
       - name: Set up Python
