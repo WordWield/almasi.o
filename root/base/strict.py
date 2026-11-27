@@ -20,16 +20,6 @@ from almasi import a, o
 class Strict(a.base.Strict):
 
 	# ======================================================================
-	# PRIVATE METHODS
-	# ======================================================================
-
-	# Reject invalid external data before constructing persistent entities.
-	# ----------------------------------------------------------------------
-	def _strict_validate_data(self, data_type, value):
-		json.dumps(value, allow_nan=False)
-		Draft202012Validator(self.strict_schema(data_type), registry=Registry()).validate(value)
-
-	# ======================================================================
 	# PUBLIC METHODS
 	# ======================================================================
 
@@ -47,11 +37,20 @@ class Strict(a.base.Strict):
 
 		return result
 
+	# Reject invalid external data before constructing persistent entities.
+	# ----------------------------------------------------------------------
+	def strict_validate(self, data_type, value):
+		'''Validate external JSON against the existing O type schema without constructing an entity.'''
+		json.dumps(value, allow_nan=False)
+		schema = self.strict_schema(data_type)
+		Draft202012Validator.check_schema(schema)
+		Draft202012Validator(schema, registry=Registry()).validate(value)
+
 	# Convert only validated JSON data into the declared ontology type.
 	# ----------------------------------------------------------------------
 	def strict_decode(self, data_type, value):
 		'''Validate external data before conversion; return the declared type.'''
-		self._strict_validate_data(data_type, value)
+		self.strict_validate(data_type, value)
 		result = None if data_type is type(None) else o.services.Entity.cast(data_type, value)
 
 		self.strict_check(result, data_type)
@@ -65,6 +64,6 @@ class Strict(a.base.Strict):
 		self.strict_check(value, data_type)
 		result = None if data_type is type(None) else value.to_data()
 
-		self._strict_validate_data(data_type, result)
+		self.strict_validate(data_type, result)
 
 		return result
