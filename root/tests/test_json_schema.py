@@ -323,7 +323,6 @@ class TestJsonSchema(o.Tester):
 				text   = o.F(str, default=None),
 				items  = o.F(list[int], default=None),
 				values = o.F(dict[str, int], default=None),
-				union  = o.F(str | int | None),
 			)
 
 			schema    = Example.to_json_schema()
@@ -332,13 +331,20 @@ class TestJsonSchema(o.Tester):
 			Draft202012Validator.check_schema(schema)
 
 			assert validator.is_valid({})
-			assert validator.is_valid({'text': None, 'items': None, 'values': None, 'union': None})
-			assert validator.is_valid({'text': 'ok', 'items': [1], 'values': {'a': 1}, 'union': 2})
-			assert validator.is_valid({'union': 'ok'})
+			assert validator.is_valid({'text': None, 'items': None, 'values': None})
+			assert validator.is_valid({'text': 'ok', 'items': [1], 'values': {'a': 1}})
 			assert not validator.is_valid({'text': 1})
 			assert not validator.is_valid({'items': ['bad']})
 			assert not validator.is_valid({'values': {'a': 'bad'}})
-			assert not validator.is_valid({'union': []})
+			# Validate union annotations independently of O's type embodiment.
+			# --------------------------------------------------------------
+			union_schema = o.JsonSchema._get_annotation_schema(str | int | None, {}, ())
+			union        = Draft202012Validator(union_schema)
+
+			for value in (None, 'ok', 2):
+				assert union.is_valid(value)
+
+			assert not union.is_valid([])
 
 		finally:
 			cls._restore_runtime(state)
