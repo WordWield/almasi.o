@@ -31,45 +31,46 @@ Application controllers orchestrate services. Application services read and modi
 
 Trusted server infrastructure may require administrative APIs (authorization, migrations, storage operations). **Administrative use must not be mistaken for dependency-safe application data access.**
 
-## Infrastructure API: typed operations
+## Infrastructure API: strict data boundaries
 
-`o.services.Operation` interprets the original bound async Python method.
-There is no separate operation object, registration or method cache.
-Start O before using the service. A protocol adapter must first select
-a permitted method and enforce its own authorization and publication rules.
-
-For an ordinary method declared `async def increment(self, step: o.Int) -> o.Int`,
-assuming `controller` is its owning instance:
+`o.base.Strict` inherits `a.base.Strict` without overriding methods,
+intercepting ordinary calls or owning additional state. Start O before
+constructing O values. A caller selects a permitted method separately;
+the mixin neither publishes nor authorizes methods.
 
 ```python
 from almasi import o
 
-method = controller.increment
-result = await o.services.Operation.invoke(method, 4)
-data   = o.services.Operation.encode(method, result)
-```
 
-The service accepts the raw JSON value, not an RPC envelope. The result
-is an actual O value; encoding returns its plain JSON-compatible data.
+class Counter(o.base.Strict):
+
+	def increment(self, step: o.Int) -> o.Int:
+		return o.Int(step.to_data() + 1)
+
+
+counter = Counter()
+step    = counter.strict_decode(o.Int, 4)
+result  = counter.strict_call(counter.increment, step)
+assert counter.strict_encode(o.Int, result) == 5
+```
 
 | Method | Contract |
 | --- | --- |
-| get_input(method) | Tuple of input parameter name (or None), concrete O type (or None), and whether keyword-only trusted user_id is declared. |
-| get_output(method) | Tuple of concrete O content type or type(None), and whether the method returns a.Resource[O type]. |
-| get_schema(data_type) | Raw JSON Schema, or None for absent input; type(None) yields the null schema. |
-| validate_input(method, value=a.Undefined) | Validate raw JSON against the declared type, distinguishing omitted input from JSON null. |
-| invoke(method, value=a.Undefined, *, user_id=None) | Validate before conversion and execution, bind the actual parameter, supply trusted identity only when declared, and check the returned type. |
-| encode(method, value) | Validate and serialize the actual typed result or the data obtained from a carrier. Does not read carriers. |
+| strict_schema(data_type) | Existing O JSON Schema for a concrete O type, or the null schema for type(None). |
+| strict_validate(data_type, value) | Check external JSON without constructing an O entity. |
+| strict_decode(data_type, value) | Validate JSON, then use Entity.cast to construct the typed value. |
+| strict_encode(data_type, value) | Check the actual type, then serialize and validate its JSON data. |
 
-Methods must have zero or one required concrete O data parameter, optional
-keyword-only user_id, and an explicit supported return annotation. Invalid
-declarations and result types raise TypeError; invalid data raises
-jsonschema.ValidationError (non-finite JSON values raise ValueError).
-Carriers retain their native identity and lifetime; the service neither
-subscribes nor reads them. Trusted identity is supplied by the adapter,
-not by remote request metadata. Protocol adapters own their wire envelopes,
-decorators and operation selection. The service does not authorize calls.
-O's existing persistent value lifetime applies to constructed input values.
+Inherited `strict_signature`, `strict_check` and `strict_call` implement
+ordinary Python checks. Sync and async methods are supported without
+constraining argument count, argument names or protocol identity.
+Ordinary calls are unchanged. External JSON validation rejects incorrect
+shapes and non-finite numbers before O construction. A wrong Python
+type raises TypeError; invalid JSON raises jsonschema.ValidationError
+(or ValueError for non-finite numbers). Native Resource carriers are
+never read by type checking; their content is encoded explicitly after
+a read. Existing O persistent value lifetime still applies.
+MCP and HTTP own their protocol envelopes and publication rules.
 
 ## Public API: ordinary applications
 
