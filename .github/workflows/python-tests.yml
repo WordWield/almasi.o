@@ -28,6 +28,13 @@ jobs:
           ref: master
           path: almasi
 
+      - name: Checkout candidate Core
+        uses: actions/checkout@v4
+        with:
+          repository: WordWield/almasi.a
+          ref: 59fdb436fa9f26cada65cd1e0c79832169e0b016
+          path: candidate-core
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -36,10 +43,12 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install -e ./almasi
-          python -m pip install -r ./o/requirements.txt
+          python -m pip install -r ./o/requirements.txt -r ./candidate-core/requirements.txt
 
       - name: Expose the checked-out O library to Almasi
-        run: ln -s "$GITHUB_WORKSPACE/o" "$RUNNER_TEMP/almasi.o"
+        run: |
+          ln -s "$GITHUB_WORKSPACE/o" "$RUNNER_TEMP/almasi.o"
+          ln -s "$GITHUB_WORKSPACE/candidate-core" "$RUNNER_TEMP/almasi.a"
 
       - name: Verify resource, Sync, Tracker and Transport contracts
         working-directory: o/root

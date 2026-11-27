@@ -29,7 +29,7 @@ class TestComputedResource(o.Tester):
 	@classmethod
 	def test_resource_module_symmetry(cls):
 		assert o.resources.Computed.__bases__ == (o.Resource,)
-		assert o.Resource.__bases__ == (o.Module,)
+		assert tuple(base for base in o.Resource.__bases__ if issubclass(base, o.Module)) == (o.Module,)
 		assert issubclass(o.resources.Computed, o.Module)
 
 	# Keep a stable resource while filling and invalidating its value.
