@@ -194,6 +194,8 @@ class Sync(o.Singleton):
 			if resource.is_subscribed():
 				if entry is None:
 					if is_computed and identifiers is o.Undefined:
+						# A value computed before native observation may already be stale.
+						resource.value = o.Undefined
 						is_unresolved = resource.value is o.Undefined and not resource.dependencies
 						identifiers   = None if is_unresolved else resource.dependencies
 
