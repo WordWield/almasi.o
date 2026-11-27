@@ -44,8 +44,7 @@ class TestClass(o.Tester):
 			'runtime'       : runtime_state,
 			'entities'      : dict(o.services.Cache.entities),
 			'cast_map'      : dict(o.services.Cache.cast_map),
-			'modules'       : [],
-			'paths'         : [],
+			'modules'       : {},
 		}
 
 		return state
@@ -53,25 +52,44 @@ class TestClass(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def _restore_runtime(cls, state):
+		if state['modules']:
+			filesystem = core.services.Filesystem
+			asyncio.run_coroutine_threadsafe(cls._release_sources(state), filesystem._loop).result(timeout=5)
+
 		o.services.Cache.entities.clear()
 		o.services.Cache.entities.update(state['entities'])
 
 		o.services.Cache.cast_map.clear()
 		o.services.Cache.cast_map.update(state['cast_map'])
 
-		for module_name in state['modules']:
-			if module_name in sys.modules:
-				del sys.modules[module_name]
-
-		for path in state['paths']:
-			if os.path.exists(path):
-				os.remove(path)
-
 		o.Tester._restore_store(state['runtime'])
 		o.Tester._restore_registry(state['registry'])
 
 		if os.path.isdir(state['source_root']):
 			shutil.rmtree(state['source_root'])
+
+	# Close source observations before removing modules or restoring their ontology.
+	# ----------------------------------------------------------------------
+	@classmethod
+	async def _release_sources(cls, state):
+		directory = core.Directory(o, state['source_root'], o.__name__ + '.tests_runtime')
+
+		for path, original in state['modules'].items():
+			module     = sys.modules.get(path)
+			class_name = o.String.snake_to_camel(os.path.basename(path).removesuffix('.py'))
+			current    = getattr(module, class_name, None)
+
+			for owner in (original, current):
+				if owner is not None and '_reload_subscription' in owner.__dict__:
+					owner._reload_file.unsubscribe(owner._reload_subscription)
+
+			sys.modules.pop(path, None)
+			directory.invalidate(os.path.basename(path))
+
+			if os.path.exists(path):
+				os.remove(path)
+
+		core.Directory(o, o.__path__, o.__name__).invalidate('tests_runtime')
 
 	# ----------------------------------------------------------------------
 	@classmethod
@@ -84,9 +102,9 @@ class TestClass(o.Tester):
 		with open(path, 'w') as file:
 			file.write(source)
 
-		state['paths'].append(path)
-		state['modules'].append(module_key)
+		state['modules'][module_key] = None
 		result = getattr(o.tests_runtime, class_name)
+		state['modules'][module_key] = result
 
 		return result
 
