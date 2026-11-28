@@ -5,8 +5,11 @@
 # ==============================================================================
 
 import os
+from unittest.mock import patch
 
-from almasi import o
+from jsonschema import ValidationError
+
+from almasi import a, o
 class TestCast(o.Tester):
 	RUNTIME_PREFIX = 'o_cast_'
 
@@ -181,6 +184,98 @@ class TestCast(o.Tester):
 			assert converted.child.id == child.id
 		finally:
 			cls._restore_runtime(state)
+
+
+	# Verify class-load schemas and their reuse throughout the data boundary.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_strict_data_boundary(cls):
+		state = cls._patch_runtime()
+
+		try:
+			with patch.object(o.JsonSchema, 'build', wraps=o.JsonSchema.build) as build:
+				class Example(o.base.Strict):
+
+					def increment(self, value: o.Int) -> o.Int:
+						return o.Int(value.to_data() + 1)
+
+					def command(self) -> None:
+						return None
+
+					def null(self, value: o.Null) -> o.Null:
+						return value
+
+				class Child(Example):
+					'''Reuse inherited method contracts.'''
+
+				assert build.call_count == 4
+
+				example   = Child()
+				signature = example.increment.__signature__
+				input     = signature['inputs']['value']
+				output    = signature['output']
+
+				assert issubclass(o.base.Strict, a.base.Strict)
+				assert Child.increment.__signature__ is Example.increment.__signature__
+				assert input == {'type': o.Int, 'jsonschema': {'type': 'integer'}}
+				assert output == input
+
+				value = example.__to_o__(input, 3)
+				assert isinstance(value, o.Int)
+				assert example.__from_o__(output, example.increment(value)) == 4
+
+				command = example.command.__signature__['output']
+				assert command == {'type': type(None), 'jsonschema': {'type': 'null'}}
+				assert example.__from_o__(command, example.command()) is None
+
+				null_signature = example.null.__signature__
+				null_value     = example.__to_o__(null_signature['inputs']['value'], None)
+				assert isinstance(null_value, o.Null)
+				assert example.__from_o__(null_signature['output'], example.null(null_value)) is None
+
+				for invalid in ('3', True, None):
+					try:
+						example.__to_o__(input, invalid)
+					except ValidationError:
+						pass
+					else:
+						assert False, 'Invalid JSON was converted to an O entity'
+
+				try:
+					example.increment(3)
+				except TypeError:
+					pass
+				else:
+					assert False, 'Strict Python invocation coerced an input'
+
+				assert build.call_count == 4
+		finally:
+			cls._restore_runtime(state)
+
+	# Reject non-O declarations at class definition, including None inputs.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_strict_declarations(cls):
+		state = cls._patch_runtime()
+
+		try:
+			for source in (
+				'def call(self, value: int) -> o.Int: return value',
+				'def call(self, value: None) -> o.Int: return value',
+				'def call(self, value: o.T) -> o.Int: return value',
+				'def call(self) -> str: return ""',
+				'def call(self) -> a.Resource[o.Int]: return None',
+				'def call(self, value): return value',
+			):
+				try:
+					exec('class Invalid(o.base.Strict):\n\t' + source, {'a': a, 'o': o})
+				except TypeError:
+					pass
+				else:
+					assert False, 'Invalid O method declaration was accepted'
+		finally:
+			cls._restore_runtime(state)
+
 
 if __name__ == '__main__':
 	TestCast.run()

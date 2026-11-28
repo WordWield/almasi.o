@@ -31,6 +31,57 @@ Application controllers orchestrate services. Application services read and modi
 
 Trusted server infrastructure may require administrative APIs (authorization, migrations, storage operations). **Administrative use must not be mistaken for dependency-safe application data access.**
 
+## Infrastructure API: strict data boundaries
+
+`o.base.Strict` extends `a.base.Strict` and its automatic checks on direct
+calls to newly declared public methods. Start O before loading subclasses.
+Every declared input and output must be a concrete descendant of `o.T`;
+the only exception is `-> None` for a method that returns no value.
+Use `o.Null` for an actual O null value. Invalid declarations fail at class
+definition. Resource carriers and ordinary Python types are not O declarations.
+
+Each method's `__signature__` dictionary contains `inputs` (ordered names
+mapped to value descriptors) and `output` (one value descriptor). O adds
+`jsonschema` to each descriptor at class creation and validates each schema.
+Inherited methods reuse their existing contract. Treat the dictionary as
+read-only. Variadic descriptors describe individual values, not their
+Python binding containers.
+
+```python
+from almasi import o
+
+o.start()
+
+
+class Counter(o.base.Strict):
+
+	def increment(self, step: o.Int) -> o.Int:
+		return o.Int(step.to_data() + 1)
+
+
+counter   = Counter()
+signature = counter.increment.__signature__
+step      = counter.__to_o__(signature['inputs']['step'], 4)
+result    = counter.increment(step)
+assert counter.__from_o__(signature['output'], result) == 5
+```
+
+| Method | Contract |
+| --- | --- |
+| __validate__(field, value) | Validate external JSON using the field's stored schema without constructing an O entity. |
+| __to_o__(field, value) | Validate JSON, then construct the declared O input type through Entity.cast. |
+| __from_o__(field, value) | Check and serialize a declared result, then validate it using the stored schema. |
+
+Pass a descriptor from the selected method's `__signature__`, not a bare
+type. No operation regenerates schemas. Direct Python calls do not coerce
+values. External JSON validation rejects incorrect shapes and non-finite
+numbers. The mixin does not authorize or publish methods. MCP and HTTP own
+their protocol envelopes and publication rules.
+
+### Annotation persistence
+
+`o.Annotation` extends `a.Annotation` only to resolve stored expressions in the owning ontology and render persistent class addresses (`__proto__`). Matching, cast, canonical ID and hash remain inherited. `to_source()` and restoration from a trusted string preserve nested O types and fork-local resolution. Never evaluate untrusted annotation strings.
+
 ## Public API: ordinary applications
 
 ### Initialize and select a world

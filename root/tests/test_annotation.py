@@ -8,12 +8,14 @@ import math
 import types
 import typing as t
 
-from almasi import o
+from almasi import a, o
 class TestAnnotation(o.Tester):
 
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_basic_atomic_annotations(cls):
+		assert issubclass(o.Annotation, a.Annotation)
+		assert isinstance(o.Annotation(list[int]).value, o.Annotation)
 		assert o.Annotation(int).id == 'int'
 		assert o.Annotation(str).id == 'str'
 		assert o.Annotation(type(None)).id == 'None'
@@ -143,6 +145,7 @@ class TestAnnotation(o.Tester):
 				before     = (str(annotation), annotation.id, hash(annotation))
 				restored   = o.Annotation(annotation.to_source())
 				assert restored.annotation == declaration
+				assert isinstance(restored, o.Annotation)
 				assert (str(annotation), annotation.id, hash(annotation)) == before
 			assert o.Annotation(list[Person]).to_source() == 'list[o.T.AnnotationSourcePerson]'
 			assert o.Annotation(dict[str, Child]).to_source() == 'dict[str, o.T.AnnotationSourcePerson.Child]'
