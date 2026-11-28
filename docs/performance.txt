@@ -1,28 +1,30 @@
 LATEST PERFORMANCE RESULTS
 ----------------------------------------------------------------------
-O #24 benchmark (protocol-independent typed Operation service)
-Measured O candidate: 078c73573a0ecf1efcd0388aeaa095d4cab22aff
+O #24 benchmark (Core Annotation and O Strict)
+Measured O candidate: 9320884ca687f0923270f4d7f39c6763f41635cb
+Measured PR merge tree: cef34debf49bbcaefe4a871274da4f8f5a2c0db9
 Almasi Loader revision: 42f45c8912ea48e07797378a94b159ad78a4bb11
+Shared Core revision: bc166d0edf63d202e002abe4dda4df62bc5b882b
 Baseline O: 63362e99bba99e0423eb55c7c405c4c7227cc256
-Run: https://github.com/WordWield/almasi.o/actions/runs/45998104455
-Measured: 2026-11-27 UTC
+Run: https://github.com/WordWield/almasi.o/actions/runs/46104682007/job/140854672026
+Measured: 2026-11-28 UTC
 Python 3.12; GitHub Actions Ubuntu; expanded graph workload;
 5 alternating rounds, 1000 iterations, isolated LMDB; median us/operation.
-Core is resolved by the Loader; the workflow does not pin its checkout.
+Both baseline and candidate use the same pinned Core and Loader.
 
 Operation              Baseline    Candidate    Delta
-list_getitem              0.412        0.401     -2.7%
-list_setitem             58.089       55.826     -3.9%
-dict_getitem              0.946        0.915     -3.3%
-dict_setitem             60.001       59.259     -1.2%
-object_attr_get           0.019        0.019     -0.4%
-object_attr_set         132.369      130.947     -1.1%
-object_create           160.002      158.801     -0.8%
-define                  159.840      158.764     -0.7%
+list_getitem              0.825        0.825     +0.0%
+list_setitem            138.804      137.250     -1.1%
+dict_getitem              1.775        1.818     +2.4%
+dict_setitem            144.773      143.593     -0.8%
+object_attr_get           0.030        0.030     +1.3%
+object_attr_set         301.810      301.629     -0.1%
+object_create           361.065      360.196     -0.2%
+define                  360.192      366.968     +1.9%
 
-No regression observed in the standard graph workload. This benchmark does
-not measure the latency of the new typed invocation service itself.
-The final commit adds the measured record without changing runtime code.
+Measured slowdowns are at most 2.4%; statistical significance was not tested.
+The benchmark does not measure Strict invocation or JSON conversion latency.
+The final record changes only documentation, not the measured runtime.
 
 HISTORICAL NOTES (before per-commit policy)
 ----------------------------------------------------------------------
