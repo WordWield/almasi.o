@@ -7,6 +7,8 @@ on:
     branches: [master]
     paths:
       - 'root/services/sync.py'
+      - 'root/services/inner_changes.py'
+      - 'root/services/outer_changes.py'
       - 'root/tests/_test_performance_sync_overhead.py'
       - '.github/workflows/sync-performance.yml'
   workflow_dispatch:
@@ -68,7 +70,10 @@ jobs:
 
           workspace = os.environ['GITHUB_WORKSPACE']
           temporary = os.environ['RUNNER_TEMP']
-          runner = os.path.join(workspace, 'o', 'root/tests/_test_performance_sync_overhead.py')
+          runners = {
+              'master': os.path.join(workspace, 'baseline_o', 'root/tests/_test_performance_sync_overhead.py'),
+              'PR': os.path.join(workspace, 'o', 'root/tests/_test_performance_sync_overhead.py'),
+          }
           environments = {
               'master': {
                   **os.environ,
@@ -96,7 +101,7 @@ jobs:
               for revision in revisions:
                   for case, arguments in cases.items():
                       completed = subprocess.run(
-                          [sys.executable, runner, '--size', '3000', *arguments],
+                          [sys.executable, runners[revision], '--size', '3000', *arguments],
                           env=environments[revision], capture_output=True, text=True,
                       )
                       if completed.returncode:

@@ -1,16 +1,15 @@
 # ==============================================================================
-# SYNC SERVICE
+# INNER CHANGES SERVICE
 # ==============================================================================
 # PURPOSE:
-# Queue committed changes from memory and transport through one worker.
+# Deliver committed local and remote owner changes inside one ontology.
 #
 # RESPONSIBILITY BOUNDARIES:
 # Owns: Resource dependency matching and committed change delivery.
-# Delegates: Listener registration and callback dispatch to Resource.
+# Delegates: Remote cache invalidation to OuterChanges and listener delivery
+# to Resource.
 # ==============================================================================
 
-import logging
-import os
 import threading
 
 from functools import partial
@@ -20,7 +19,7 @@ from time      import sleep
 from almasi import o
 
 
-class Sync(o.Singleton):
+class InnerChanges(o.Singleton):
 
 	# ======================================================================
 	# PRIVATE METHODS
@@ -98,11 +97,7 @@ class Sync(o.Singleton):
 	# ----------------------------------------------------------------------
 	def _update(self, ids, local=True):
 		if not local:
-			try:
-				o.services.Cache.invalidate(ids)
-			except Exception:
-				logging.exception('Critical cache invalidation failure')
-				os._exit(1)
+			o.services.OuterChanges.invalidate(ids)
 
 		self._dispatch(ids, local)
 

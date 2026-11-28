@@ -1,10 +1,10 @@
 # Architecture: Tracker — persistent read dependencies
 
-**Status:** Implemented read dependency tracking. The separate Sync service owns write-owner notification delivery; browser transport belongs to consumers.
-**Sources:** `root/services/tracker.py`, `root/services/memory.py`, `root/services/sync.py`, `root/t.py`, `root/t_meta.py`, and the O persistence services.
+**Status:** Implemented read dependency tracking. The separate InnerChanges service owns write-owner notification delivery; browser transport belongs to consumers.
+**Sources:** `root/services/tracker.py`, `root/services/memory.py`, `root/services/inner_changes.py`, `root/t.py`, `root/t_meta.py`, and the O persistence services.
 **Tests:** `root/tests/test_tracker.py`, `root/tests/test_tracker_public_api.py`, `root/tests/test_tracker_transparency.py`, `root/tests/test_write_tracking.py`.
 **Benchmarks:** `root/tests/_test_performance_tracker.py`, `root/tests/_test_performance_write_tracking.py`.
-**Companions:** [Public O API](architecture.public_api.md), [Sync delivery](architecture.sync.md).
+**Companions:** [Public O API](architecture.public_api.md), [InnerChanges delivery](architecture.sync.md).
 
 ## Mandatory application API boundary
 
@@ -17,7 +17,7 @@ The public API is necessary but does not guarantee complete reactive coverage fo
 ## Two independent responsibilities
 
 - **Tracker:** observes reads of persistent O objects while a caller-owned scope is active, recording owner entity IDs in caller-supplied lists.
-- **Memory/Zone/Sync:** persist O changes and asynchronously deliver explicit affected-owner IDs, independently of Tracker scopes or Python read interception.
+- **Memory/Zone/InnerChanges:** persist O changes and asynchronously deliver explicit affected-owner IDs, independently of Tracker scopes or Python read interception.
 
 The intended coherence relationship is **read dependency ID ↔ committed write owner ID** within the same ontology world. Neither a read trace nor a pre-commit notification is, by itself, a complete subscription system.
 
@@ -95,21 +95,21 @@ Original class attributes/descriptors are restored when the last read scope clos
 
 Direct atom conversion, some schema reflection, custom rendering callbacks and administrative authorization remain outside fully verified read coverage. Observing a method does not prove that every dependency of an arbitrary computation is recorded.
 
-## Storage write notifications belong to Sync
+## Storage write notifications belong to InnerChanges
 
 The O persistence layer reports **explicit changed-owner IDs** to its
-`Sync` service. Tracker does not determine those IDs, intercept writes,
+`InnerChanges` service. Tracker does not determine those IDs, intercept writes,
 manage subscribers, or interpret transaction state. `None` requests a
 full invalidation when ownership is unknown; `0` is not a sentinel.
 
 The former `Memory.ipl`, `pre_invalidate()`, speculative fallback, and
-transaction-ID-based Sync registration methods are no longer part of the
+transaction-ID-based InnerChanges registration methods are no longer part of the
 implementation. `MemoryBatch` accumulates changed owner IDs during a write
-transaction and calls `Sync.publish_change(ids, local=True)` once after its
+transaction and calls `InnerChanges.publish_change(ids, local=True)` once after its
 outermost successful commit. Failed transactions discard notifications;
 nested writes share the outer transaction.
 
-Ordinary Sync notifications are asynchronous but never speculative: they
+Ordinary InnerChanges notifications are asynchronous but never speculative: they
 represent changes committed by the producer. They remain non-durable and
 can be lost if a process exits before its worker delivers them. See
 [architecture.sync.md](architecture.sync.md) for worker lifetime,
@@ -127,7 +127,7 @@ result_before != result_after  =>  R_before ∩ W_committed != ∅
 
 A consumer receiving an intersecting invalidation can re-run its
 computation under read tracking and **replace** its dependency set.
-Sync notifications signal invalidation rather than transporting values.
+InnerChanges notifications signal invalidation rather than transporting values.
 Tracker does not own subscriptions, result caching, network delivery,
 reconnection or replay.
 
@@ -169,12 +169,12 @@ py root/tests/_test_performance_tracker.py
 py root/tests/_test_performance_tracker.py --mode r --workload expanded
 py root/tests/_test_performance_tracker.py --size 1000 --rounds 2
 
-# Compare native Sync with a no-op producer stub.
+# Compare native InnerChanges with a no-op producer stub.
 py root/tests/_test_performance_write_tracking.py --size 1500 --rounds 3 --sync native
 py root/tests/_test_performance_write_tracking.py --size 1500 --rounds 3 --sync stub
 ```
 
-The Tracker benchmark retains `none` and `r` as **measurement labels** (or `all`), not arguments to `Tracker.track_reads(ids)`; there are no `w`/`rw` tracker modes. The write benchmark compares local Sync behavior with a stub; it does **not** measure MCP or network latency. Measurements use fresh storage.
+The Tracker benchmark retains `none` and `r` as **measurement labels** (or `all`), not arguments to `Tracker.track_reads(ids)`; there are no `w`/`rw` tracker modes. The write benchmark compares local InnerChanges behavior with a stub; it does **not** measure MCP or network latency. Measurements use fresh storage.
 
 ## Verification and limits
 
@@ -185,7 +185,7 @@ py root/test.py
 - `test_tracker.py`: cached and uncached field/collection reads, nested scopes, field publication, exception cleanup, async/thread observation and fork isolation.
 - `test_tracker_public_api.py`: structural reads, conversion, enumeration, lifecycle dependency intersections and existence checks.
 - `test_tracker_transparency.py`: normal behavior with no tracking versus `'r'`, including failure and schema/mutation cases.
-- `test_write_tracking.py`: explicit owner IDs, Sync calls, outer commit confirmation, rollback, nested failures, Zone-cache recovery and post-commit confirmation errors.
+- `test_write_tracking.py`: explicit owner IDs, InnerChanges calls, outer commit confirmation, rollback, nested failures, Zone-cache recovery and post-commit confirmation errors.
 - `test_sync.py`: filtered subscriptions, full invalidation, commit visibility,
   concurrency and worker delivery.
 

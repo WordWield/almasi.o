@@ -32,7 +32,7 @@ class TestTrackerPublicApi(o.Tester):
 	@classmethod
 	@contextmanager
 	def _observe_writes(cls):
-		sync     = o.services.Sync
+		sync     = o.services.InnerChanges
 		received = Queue()
 		subscription = sync.subscribe(received.put)
 

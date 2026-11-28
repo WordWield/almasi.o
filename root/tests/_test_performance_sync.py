@@ -47,7 +47,7 @@ class TestPerformanceSync(o.Tester):
 			o.start(multiprocess=mode == 'ipc')
 
 			memory = o.services.Memory
-			sync   = o.services.Sync
+			sync   = o.services.InnerChanges
 			result = {}
 
 			if mode == 'stub':

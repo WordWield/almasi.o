@@ -129,7 +129,7 @@ class MemoryBatch:
 			self.failed = True
 			raise
 
-	# Remove an existing key and notify Sync about its changed owner.
+	# Remove an existing key and notify InnerChanges about its changed owner.
 	# ----------------------------------------------------------------------
 	def unset(self, key, owner_id):
 		try:
@@ -379,7 +379,7 @@ class Memory(o.Singleton):
 		self._read   = None
 		self._write  = None
 		self.root_id = o.String.hash('o.T', 15)
-		self.sync    = o.services.Sync
+		self.sync    = o.services.InnerChanges
 
 	# Open read batch
 	# ----------------------------------------------------------------------
@@ -401,7 +401,7 @@ class Memory(o.Singleton):
 		return Zone(prefix)
 
 	# Store a value with its affected ID or iterable of IDs.
-	# None requests full Sync invalidation for unknown owners.
+	# None requests full InnerChanges invalidation for unknown owners.
 	# ----------------------------------------------------------------------
 	def set(self, key, value, owner_id):
 		with self.write() as batch:

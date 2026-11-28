@@ -6,7 +6,7 @@
 #
 # RESPONSIBILITY BOUNDARIES:
 # Owns: Cached value and observed dependencies.
-# Delegates: Dependency matching to Sync and listener delivery to Resource.
+# Delegates: Dependency matching to InnerChanges and listener delivery to Resource.
 # ==============================================================================
 
 import threading
@@ -52,11 +52,11 @@ class Computed(o.Resource):
 			else:
 				self._candidate = value
 
-	# Observe dependencies in Sync while this resource has listeners.
+	# Observe dependencies in InnerChanges while this resource has listeners.
 	# ----------------------------------------------------------------------
 	@property
 	def _observe(self):
-		return o.services.Sync.observe
+		return o.services.InnerChanges.observe
 
 	# Start one non-replayable computation without exposing partial values.
 	# ----------------------------------------------------------------------

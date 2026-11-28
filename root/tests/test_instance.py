@@ -494,7 +494,7 @@ class TestInstance(o.Tester):
 	@classmethod
 	def test_sync_receives_attr_transitions(cls):
 		state    = cls._patch_runtime()
-		sync     = o.services.Sync
+		sync     = o.services.InnerChanges
 		received = Queue()
 		callback = None
 

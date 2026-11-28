@@ -39,7 +39,7 @@ class TestSync(o.Tester):
 
 				self._deliver([event])
 
-		service_type = type('SyncTest', (type(o.services.Sync),), {'_run_worker_loop': run_worker})
+		service_type = type('SyncTest', (type(o.services.InnerChanges),), {'_run_worker_loop': run_worker})
 		service      = service_type()
 		service._test_stop = object()
 		service.initialize()
@@ -94,7 +94,7 @@ class TestSync(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_coalesced_publication_order(cls):
-		sync      = o.services.Sync
+		sync      = o.services.InnerChanges
 		entered   = threading.Event()
 		release   = threading.Event()
 		received  = Queue()

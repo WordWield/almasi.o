@@ -67,7 +67,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 			o.start(multiprocess=False)
 
 			memory   = o.services.Memory
-			sync     = o.services.Sync
+			sync     = o.services.InnerChanges
 			release  = threading.Event()
 			entered  = threading.Event()
 			callback = None
@@ -216,7 +216,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 			type(o).__app__ = SimpleNamespace(__lib_path__=directory)
 			o.start(multiprocess=False)
 
-			sync   = o.services.Sync
+			sync   = o.services.InnerChanges
 			result = {}
 
 			try:

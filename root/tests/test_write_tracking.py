@@ -65,7 +65,7 @@ class TestWriteTracking(o.Tester):
 				('publish', None),
 			]
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Collection happens during writes; publication happens after commit.
@@ -98,7 +98,7 @@ class TestWriteTracking(o.Tester):
 			assert events == [('publish', None)]
 			assert list(memory.keys('changes/')) == []
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Each mutation sends one immediate ID and one commit confirmation.
@@ -122,7 +122,7 @@ class TestWriteTracking(o.Tester):
 			assert events[-1] == ('publish', None)
 			assert item.value == 0
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Collection changes report their collection identity.
@@ -150,7 +150,7 @@ class TestWriteTracking(o.Tester):
 			assert list(items) == [3, 4]
 			assert dict(mapping.items()) == {'a': 2}
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Instance creation and deletion also report parent-class membership.
@@ -173,7 +173,7 @@ class TestWriteTracking(o.Tester):
 
 			assert {item.id, Model.id} <= dropped
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Class creation and deletion also report the parent-class ID.
@@ -196,7 +196,7 @@ class TestWriteTracking(o.Tester):
 
 			assert {Child.id, Base.id} <= dropped
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Nested writes send immediately, including duplicates, but commit once.
@@ -233,7 +233,7 @@ class TestWriteTracking(o.Tester):
 			assert memory.get('o.T.WriteNested._1.left') == 3
 			assert memory.get('o.T.WriteNested._1.right') == 2
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Rollback leaves pre-invalidation for Sync timeout but no confirmation.
@@ -264,7 +264,7 @@ class TestWriteTracking(o.Tester):
 				('publish', None),
 			]
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Every administrative change explicitly supplies its affected IDs.
@@ -289,7 +289,7 @@ class TestWriteTracking(o.Tester):
 			written = {owner for name, owner in events if name == 'change'}
 			assert {12345, 23456, 34567, 45678, 56789, memory.root_id} <= written
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Services propagate known IDs without interpreting storage keys.
@@ -320,7 +320,7 @@ class TestWriteTracking(o.Tester):
 				('publish', None),
 			]
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Auth writes notify the root instance and their target node.
@@ -343,7 +343,7 @@ class TestWriteTracking(o.Tester):
 			]
 		finally:
 			o.TREE_MODE = old_mode
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Clear reports owner once for an instance zone.
@@ -367,7 +367,7 @@ class TestWriteTracking(o.Tester):
 			]
 			assert memory.get('o.T.WriteClear._1.a') is o.Undefined
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Mixed-owner prefix removal uses caller-provided IDs, not key parsing.
@@ -392,7 +392,7 @@ class TestWriteTracking(o.Tester):
 			assert o.services.Id.hash('o.T.WriteMixed._2') in written
 			assert events[-1] == ('publish', None)
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Bulk deletion can explicitly notify the owner and referenced targets.
@@ -413,7 +413,7 @@ class TestWriteTracking(o.Tester):
 			assert zone.owner_id in written
 			assert 12345 in written
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Provided owner IDs are sent directly, without hashing or parsing.
@@ -433,7 +433,7 @@ class TestWriteTracking(o.Tester):
 				('publish', None),
 			]
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Direct memory writes require an ID even when Sync is disconnected.
@@ -454,7 +454,7 @@ class TestWriteTracking(o.Tester):
 			assert failed
 			assert memory.get('custom/no_owner') is o.Undefined
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Neither missing deletes nor empty write batches emit notifications.
@@ -475,7 +475,7 @@ class TestWriteTracking(o.Tester):
 
 			assert events == []
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# Disconnected Sync does not change the explicit owner-ID contract.
@@ -486,13 +486,13 @@ class TestWriteTracking(o.Tester):
 
 		try:
 			memory = o.services.Memory
-			assert memory.sync is o.services.Sync
+			assert memory.sync is o.services.InnerChanges
 			memory.set('o.T.WriteStandalone._1.value', 10, o.services.Id.hash('o.T.WriteStandalone._1'))
 
 			assert memory.get('o.T.WriteStandalone._1.value') == 10
 			assert list(memory.keys('changes/')) == []
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 
@@ -562,7 +562,7 @@ class TestWriteTracking(o.Tester):
 			assert memory._write is None
 			assert memory.get(key) == 7
 		finally:
-			o.services.Memory.sync = o.services.Sync
+			o.services.Memory.sync = o.services.InnerChanges
 			cls._restore_runtime(state)
 
 	# A caught nested body failure still forces the outer batch to roll back.

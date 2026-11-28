@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 	type(o).__app__ = SimpleNamespace(__lib_path__=directory)
 	o.start()
 
-	assert not o.services.Sync._resources
+	assert not o.services.InnerChanges._resources
 	assert not any(thread.name == 'o-transport' for thread in threading.enumerate())
 '''
 		result = subprocess.run(
@@ -93,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 		peer = cls._peer(path)
 
 		try:
-			o.services.Sync.publish_change([780001, 780002], local=True)
+			o.services.InnerChanges.publish_change([780001, 780002], local=True)
 
 			assert cls._frame(peer) == [780001, 780002]
 		finally:
@@ -111,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 		entity   = SimpleNamespace(__invalidate__=lambda: changed.append(owner_id))
 		cache    = o.services.Cache.entities
 		original = cache.get(owner_id)
-		callback = o.services.Sync.subscribe({owner_id}, received.put)
+		callback = o.services.InnerChanges.subscribe({owner_id}, received.put)
 
 		try:
 			cache[owner_id] = entity
@@ -152,7 +152,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 		cache    = o.services.Cache.entities
 		original = cache.get(owner_id)
 		cache[owner_id] = SimpleNamespace(__invalidate__=lambda: changed.append(owner_id))
-		callback = o.services.Sync.subscribe({owner_id}, received.put)
+		callback = o.services.InnerChanges.subscribe({owner_id}, received.put)
 
 		try:
 			peer.sendall(b'null\n')
@@ -176,7 +176,7 @@ with tempfile.TemporaryDirectory(prefix='o_test_') as directory:
 		other    = os.path.realpath(path + '-other')
 		peer     = cls._peer(other)
 		received = queue.Queue()
-		callback = o.services.Sync.subscribe({780004}, received.put)
+		callback = o.services.InnerChanges.subscribe({780004}, received.put)
 
 		try:
 			peer.sendall(json.dumps([780004]).encode('utf-8') + b'\n')
@@ -215,7 +215,7 @@ owner_id = int(sys.argv[2])
 received = queue.Queue()
 
 assert o.services.Memory.get(key) == 1
-callback = o.services.Sync.subscribe({owner_id}, received.put)
+callback = o.services.InnerChanges.subscribe({owner_id}, received.put)
 
 print('READY', flush=True)
 assert received.get(timeout=12) == frozenset({owner_id})
