@@ -34,7 +34,7 @@ on successful exit it updates the existing source subscriptions to those
 IDs and publishes the staged value. An exception abandons the candidate
 without changing the old dependency scope.
 
-A temporary broad Sync registration is active while the block executes.
+A temporary broad Changes registration is active while the block executes.
 Unlike ordinary asynchronous subscribers, this internal commit observer sees
 published owner IDs synchronously **after successful O commit and before**
 the update enters the worker queue. The source's publication lock also guards
@@ -48,7 +48,7 @@ The synchronous commit channel uses a Resource; no second dependency index,
 change revision, or replayable function is introduced.
 
 **Boundary:** an independent process may commit before its Transport message
-reaches this process. Sync cannot detect that unseen remote commit and makes
+reaches this process. Changes cannot detect that unseen remote commit and makes
 no global ordering guarantee. Once the remote notification arrives, it
 invalidates relevant cached values normally. Strict multiprocess read
 linearizability remains unproven without a cross-process validation mechanism.
@@ -56,12 +56,12 @@ linearizability remains unproven without a cross-process validation mechanism.
 ## Subscription source
 
 `o.resources.Computed` inherits `Resource.subscribe(callback)` and owns its
-listeners. Sync indexes each actively observed resource once. A resource
+listeners. Changes indexes each actively observed resource once. A resource
 without a computed dependency scope starts with broad observation. Successful
 recomputation replaces that resource's scope atomically under the publication
 lock, without changing any listener.
 
-On a matching invalidation Sync calls `resource.update(changed_ids)` once.
+On a matching invalidation Changes calls `resource.update(changed_ids)` once.
 The resource invalidates its value to `o.Undefined` before delivering to all
 live listeners. The last canceled listener releases the resource's index
 entry. The synchronous commit channel used by Tracker is separate from

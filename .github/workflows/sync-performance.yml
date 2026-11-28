@@ -1,4 +1,4 @@
-name: O Sync performance
+name: O Changes performance
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [master]
     paths:
-      - 'root/services/sync.py'
+      - 'root/services/changes.py'
       - 'root/tests/_test_performance_sync_overhead.py'
       - '.github/workflows/sync-performance.yml'
   workflow_dispatch:
@@ -46,7 +46,7 @@ jobs:
           python -m pip install -r ./o/requirements.txt
           ln -s "$GITHUB_WORKSPACE/o" "$RUNNER_TEMP/almasi.o"
 
-      - name: 'Benchmark Sync producer and worker overhead'
+      - name: 'Benchmark Changes producer and worker overhead'
         if: github.event_name != 'pull_request'
         working-directory: o
         env:
@@ -68,7 +68,10 @@ jobs:
 
           workspace = os.environ['GITHUB_WORKSPACE']
           temporary = os.environ['RUNNER_TEMP']
-          runner = os.path.join(workspace, 'o', 'root/tests/_test_performance_sync_overhead.py')
+          runners = {
+              'master': os.path.join(workspace, 'baseline_o', 'root/tests/_test_performance_sync_overhead.py'),
+              'PR': os.path.join(workspace, 'o', 'root/tests/_test_performance_sync_overhead.py'),
+          }
           environments = {
               'master': {
                   **os.environ,
@@ -96,7 +99,7 @@ jobs:
               for revision in revisions:
                   for case, arguments in cases.items():
                       completed = subprocess.run(
-                          [sys.executable, runner, '--size', '3000', *arguments],
+                          [sys.executable, runners[revision], '--size', '3000', *arguments],
                           env=environments[revision], capture_output=True, text=True,
                       )
                       if completed.returncode:

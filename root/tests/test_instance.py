@@ -489,12 +489,12 @@ class TestInstance(o.Tester):
 		finally:
 			cls._restore_runtime(state)
 
-	# Attribute updates and deletion publish their owner through Sync.
+	# Attribute updates and deletion publish their owner through Changes.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_sync_receives_attr_transitions(cls):
 		state    = cls._patch_runtime()
-		sync     = o.services.Sync
+		sync     = o.services.Changes
 		received = Queue()
 		callback = None
 

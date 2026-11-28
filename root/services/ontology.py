@@ -92,7 +92,7 @@ class Ontology(o.Singleton):
 
 		if not is_reconnecting:
 			self._initialize_service(o.services.Cache)
-			self._initialize_service(o.services.Sync)
+			self._initialize_service(o.services.Changes)
 
 		self._initialize_service(o.services.Memory, sync=sync)
 
@@ -135,6 +135,6 @@ class Ontology(o.Singleton):
 			self._initialize_service(
 				o.services.Transport,
 				path = o.services.Memory.path,
-				sync = o.services.Sync,
+				sync = o.services.Changes,
 			)
 			self._multiprocess_enabled = True

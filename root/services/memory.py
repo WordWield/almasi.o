@@ -86,7 +86,7 @@ class MemoryBatch:
 				try:
 					sync.publish_change(ids, local=True)
 				except Exception as error:
-					raise RuntimeError('LMDB committed; Sync publication failed') from error
+					raise RuntimeError('LMDB committed; Changes publication failed') from error
 
 			if aborted and exc_type is None:
 				raise RuntimeError('Transaction aborted after an earlier failure')
@@ -129,7 +129,7 @@ class MemoryBatch:
 			self.failed = True
 			raise
 
-	# Remove an existing key and notify Sync about its changed owner.
+	# Remove an existing key and notify Changes about its changed owner.
 	# ----------------------------------------------------------------------
 	def unset(self, key, owner_id):
 		try:
@@ -379,7 +379,7 @@ class Memory(o.Singleton):
 		self._read   = None
 		self._write  = None
 		self.root_id = o.String.hash('o.T', 15)
-		self.sync    = o.services.Sync
+		self.sync    = o.services.Changes
 
 	# Open read batch
 	# ----------------------------------------------------------------------
@@ -401,7 +401,7 @@ class Memory(o.Singleton):
 		return Zone(prefix)
 
 	# Store a value with its affected ID or iterable of IDs.
-	# None requests full Sync invalidation for unknown owners.
+	# None requests full Changes invalidation for unknown owners.
 	# ----------------------------------------------------------------------
 	def set(self, key, value, owner_id):
 		with self.write() as batch:

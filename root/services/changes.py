@@ -1,5 +1,5 @@
 # ==============================================================================
-# SYNC SERVICE
+# CHANGES SERVICE
 # ==============================================================================
 # PURPOSE:
 # Queue committed changes from memory and transport through one worker.
@@ -20,7 +20,7 @@ from time      import sleep
 from almasi import o
 
 
-class Sync(o.Singleton):
+class Changes(o.Singleton):
 
 	# ======================================================================
 	# PRIVATE METHODS
@@ -168,7 +168,7 @@ class Sync(o.Singleton):
 
 		self._worker = threading.Thread(
 			target = self._run_worker_loop,
-			name   = 'o-sync',
+			name   = 'o-changes',
 			daemon = True,
 		)
 		self._worker.start()

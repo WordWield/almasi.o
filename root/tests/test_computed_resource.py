@@ -6,7 +6,7 @@
 #
 # RESPONSIBILITY BOUNDARIES:
 # Owns: Assertions about shared observation and computed value invalidation.
-# Delegates: Registration and delivery to Resource and O Sync.
+# Delegates: Registration and delivery to Resource and O Changes.
 # ==============================================================================
 
 import gc
@@ -57,24 +57,24 @@ class TestComputedResource(o.Tester):
 
 			second_events = []
 			second_handle = resource.subscribe(second_events.append)
-			assert o.services.Sync._by_id[item.id] == {resource}
+			assert o.services.Changes._by_id[item.id] == {resource}
 			assert resource.dependencies == frozenset({item.id})
-			assert o.services.Sync._resources[resource][2] == frozenset({item.id})
+			assert o.services.Changes._resources[resource][2] == frozenset({item.id})
 
-			o.services.Sync._dispatch(frozenset({item.id}))
+			o.services.Changes._dispatch(frozenset({item.id}))
 
 			assert resource.read() is o.Undefined
 			assert events == [frozenset({item.id})]
 			assert second_events == events
 			resource.unsubscribe(second_handle)
-			assert resource in o.services.Sync._resources
+			assert resource in o.services.Changes._resources
 
 			with o.services.Tracker.track_reads(resource) as observed:
 				observed.value = item.count * 3
 
 			assert resource.read() == 12
 			resource.unsubscribe(handle)
-			assert resource not in o.services.Sync._resources
+			assert resource not in o.services.Changes._resources
 		finally:
 			cls._restore_runtime(state)
 
@@ -90,7 +90,7 @@ class TestComputedResource(o.Tester):
 
 		assert resource.read() is None
 		assert resource.dependencies == frozenset()
-		assert o.services.Sync._resources[resource][2] == frozenset()
+		assert o.services.Changes._resources[resource][2] == frozenset()
 		resource.unsubscribe(handle)
 
 	# An unchanged dependency scope must preserve the dispatch snapshot and index.
@@ -99,7 +99,7 @@ class TestComputedResource(o.Tester):
 	def test_unchanged_dependencies_preserve_index(cls):
 		resource = o.resources.Computed()
 		handle   = resource.subscribe(lambda changed: None)
-		sync     = o.services.Sync
+		sync     = o.services.Changes
 
 		try:
 			with o.services.Tracker.track_reads(resource) as observed:
@@ -134,21 +134,21 @@ class TestComputedResource(o.Tester):
 			with o.services.Tracker.track_reads(resource) as observed:
 				observed.value = first.count
 
-			o.services.Sync._dispatch(frozenset({first.id}))
+			o.services.Changes._dispatch(frozenset({first.id}))
 			assert resource.value is o.Undefined
 
 			with o.services.Tracker.track_reads(resource) as observed:
 				observed.value = second.count
 
 			assert resource.dependencies == frozenset({second.id})
-			assert o.services.Sync._resources[resource][2] == frozenset({second.id})
+			assert o.services.Changes._resources[resource][2] == frozenset({second.id})
 
 			events.clear()
-			o.services.Sync._dispatch(frozenset({first.id}))
+			o.services.Changes._dispatch(frozenset({first.id}))
 			assert resource.read() == 2
 			assert not events
 
-			o.services.Sync._dispatch(frozenset({second.id}))
+			o.services.Changes._dispatch(frozenset({second.id}))
 			assert resource.value is o.Undefined
 			assert events == [frozenset({second.id})]
 			resource.unsubscribe(handle)
@@ -170,11 +170,11 @@ class TestComputedResource(o.Tester):
 			with TestCase().assertRaisesRegex(RuntimeError, 'changed during read'):
 				with o.services.Tracker.track_reads(resource) as observed:
 					observed.value = item.count
-					o.services.Sync.publish_change(frozenset({item.id}))
+					o.services.Changes.publish_change(frozenset({item.id}))
 
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset()
-			assert o.services.Sync._resources[resource][2] is None
+			assert o.services.Changes._resources[resource][2] is None
 			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)
@@ -218,7 +218,7 @@ class TestComputedResource(o.Tester):
 			with o.services.Tracker.track_reads(resource) as observed:
 				observed.value = first.count
 
-			o.services.Sync._dispatch(frozenset({first.id}))
+			o.services.Changes._dispatch(frozenset({first.id}))
 			with TestCase().assertRaisesRegex(ValueError, 'intentional'):
 				with o.services.Tracker.track_reads(resource) as observed:
 					observed.value = second.count
@@ -226,7 +226,7 @@ class TestComputedResource(o.Tester):
 
 			assert resource.value is o.Undefined
 			assert resource.dependencies == frozenset({first.id})
-			assert o.services.Sync._resources[resource][2] == frozenset({first.id})
+			assert o.services.Changes._resources[resource][2] == frozenset({first.id})
 			resource.unsubscribe(handle)
 		finally:
 			cls._restore_runtime(state)

@@ -27,12 +27,12 @@ class TestTrackerPublicApi(o.Tester):
 	# PRIVATE METHODS
 	# ======================================================================
 
-	# Collect confirmed owner IDs from the real asynchronous Sync service.
+	# Collect confirmed owner IDs from the real asynchronous Changes service.
 	# ----------------------------------------------------------------------
 	@classmethod
 	@contextmanager
 	def _observe_writes(cls):
-		sync     = o.services.Sync
+		sync     = o.services.Changes
 		received = Queue()
 		subscription = sync.subscribe(received.put)
 
@@ -41,7 +41,7 @@ class TestTrackerPublicApi(o.Tester):
 		finally:
 			subscription()
 
-	# Wait until all expected owners have been published by Sync.
+	# Wait until all expected owners have been published by Changes.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def _wait_for_writes(cls, received, expected):
