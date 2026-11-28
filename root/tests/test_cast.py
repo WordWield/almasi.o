@@ -5,6 +5,7 @@
 # ==============================================================================
 
 import os
+from unittest.mock import patch
 
 from jsonschema import ValidationError
 
@@ -185,50 +186,93 @@ class TestCast(o.Tester):
 			cls._restore_runtime(state)
 
 
-	# Exercise the inherited checks and O conversion without changing direct calls.
+	# Verify class-load schemas and their reuse throughout the data boundary.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_strict_data_boundary(cls):
 		state = cls._patch_runtime()
 
 		try:
-			class Example(o.base.Strict):
+			with patch.object(o.JsonSchema, 'build', wraps=o.JsonSchema.build) as build:
+				class Example(o.base.Strict):
 
-				def increment(self, value: o.Int) -> o.Int:
-					return o.Int(value.to_data() + 1)
+					def increment(self, value: o.Int) -> o.Int:
+						return o.Int(value.to_data() + 1)
 
-				def echo(self, value):
-					return value
+					def command(self) -> None:
+						return None
 
-			example = Example()
+					def null(self, value: o.Null) -> o.Null:
+						return value
 
-			assert issubclass(o.base.Strict, a.base.Strict)
-			assert example.echo('ordinary') == 'ordinary'
-			assert example.__get_schema__(o.Int) == o.Int.to_json_schema()
-			assert example.__get_schema__(a.Resource[o.Int]) == o.Int.to_json_schema()
-			assert example.__get_schema__(type(None)) == {'type': 'null'}
-			assert example.__to_o__(type(None), None) is None
-			assert example.__from_o__(type(None), None) is None
+				class Child(Example):
+					'''Reuse inherited method contracts.'''
 
-			value = example.__to_o__(o.Int, 3)
-			assert isinstance(value, o.Int)
-			assert example.__from_o__(a.Resource[o.Int], value) == 3
-			assert example.__from_o__(o.Int, example.__call_method__(example.increment, value)) == 4
+				assert build.call_count == 4
 
-			for invalid in ('3', True, None):
+				example   = Child()
+				signature = example.increment.__signature__
+				input     = signature['inputs']['value']
+				output    = signature['output']
+
+				assert issubclass(o.base.Strict, a.base.Strict)
+				assert Child.increment.__signature__ is Example.increment.__signature__
+				assert input == {'type': o.Int, 'jsonschema': {'type': 'integer'}}
+				assert output == input
+
+				value = example.__to_o__(input, 3)
+				assert isinstance(value, o.Int)
+				assert example.__from_o__(output, example.increment(value)) == 4
+
+				command = example.command.__signature__['output']
+				assert command == {'type': type(None), 'jsonschema': {'type': 'null'}}
+				assert example.__from_o__(command, example.command()) is None
+
+				null_signature = example.null.__signature__
+				null_value     = example.__to_o__(null_signature['inputs']['value'], None)
+				assert isinstance(null_value, o.Null)
+				assert example.__from_o__(null_signature['output'], example.null(null_value)) is None
+
+				for invalid in ('3', True, None):
+					try:
+						example.__to_o__(input, invalid)
+					except ValidationError:
+						pass
+					else:
+						assert False, 'Invalid JSON was converted to an O entity'
+
 				try:
-					example.__to_o__(o.Int, invalid)
-				except ValidationError:
+					example.increment(3)
+				except TypeError:
 					pass
 				else:
-					assert False, 'Invalid JSON was converted to an O entity'
+					assert False, 'Strict Python invocation coerced an input'
 
-			try:
-				example.__call_method__(example.increment, 3)
-			except TypeError:
-				pass
-			else:
-				assert False, 'Strict Python invocation coerced an input'
+				assert build.call_count == 4
+		finally:
+			cls._restore_runtime(state)
+
+	# Reject non-O declarations at class definition, including None inputs.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def test_strict_declarations(cls):
+		state = cls._patch_runtime()
+
+		try:
+			for source in (
+				'def call(self, value: int) -> o.Int: return value',
+				'def call(self, value: None) -> o.Int: return value',
+				'def call(self, value: o.T) -> o.Int: return value',
+				'def call(self) -> str: return ""',
+				'def call(self) -> a.Resource[o.Int]: return None',
+				'def call(self, value): return value',
+			):
+				try:
+					exec('class Invalid(o.base.Strict):\n\t' + source, {'a': a, 'o': o})
+				except TypeError:
+					pass
+				else:
+					assert False, 'Invalid O method declaration was accepted'
 		finally:
 			cls._restore_runtime(state)
 

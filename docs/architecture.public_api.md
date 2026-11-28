@@ -33,13 +33,24 @@ Trusted server infrastructure may require administrative APIs (authorization, mi
 
 ## Infrastructure API: strict data boundaries
 
-`o.base.Strict` inherits `a.base.Strict` without overriding methods,
-intercepting ordinary calls or owning additional state. Start O before
-constructing O values. A caller selects a permitted method separately;
-the mixin neither publishes nor authorizes methods.
+`o.base.Strict` extends `a.base.Strict` and its automatic checks on direct
+calls to newly declared public methods. Start O before loading subclasses.
+Every declared input and output must be a concrete descendant of `o.T`;
+the only exception is `-> None` for a method that returns no value.
+Use `o.Null` for an actual O null value. Invalid declarations fail at class
+definition. Resource carriers and ordinary Python types are not O declarations.
+
+Each method's `__signature__` dictionary contains `inputs` (ordered names
+mapped to value descriptors) and `output` (one value descriptor). O adds
+`jsonschema` to each descriptor at class creation and validates each schema.
+Inherited methods reuse their existing contract. Treat the dictionary as
+read-only. Variadic descriptors describe individual values, not their
+Python binding containers.
 
 ```python
 from almasi import o
+
+o.start()
 
 
 class Counter(o.base.Strict):
@@ -48,29 +59,24 @@ class Counter(o.base.Strict):
 		return o.Int(step.to_data() + 1)
 
 
-counter = Counter()
-step    = counter.__to_o__(o.Int, 4)
-result  = counter.__call_method__(counter.increment, step)
-assert counter.__from_o__(o.Int, result) == 5
+counter   = Counter()
+signature = counter.increment.__signature__
+step      = counter.__to_o__(signature['inputs']['step'], 4)
+result    = counter.increment(step)
+assert counter.__from_o__(signature['output'], result) == 5
 ```
 
 | Method | Contract |
 | --- | --- |
-| __get_schema__(data_type) | Existing O JSON Schema for a concrete O type, Resource[T] content, or the null schema for type(None). |
-| __validate__(data_type, value) | Check external JSON without constructing an O entity. |
-| __to_o__(data_type, value) | Validate JSON, then use Entity.cast to construct the typed value. |
-| __from_o__(data_type, value) | Check the actual type, then serialize and validate its JSON data. |
+| __validate__(field, value) | Validate external JSON using the field's stored schema without constructing an O entity. |
+| __to_o__(field, value) | Validate JSON, then construct the declared O input type through Entity.cast. |
+| __from_o__(field, value) | Check and serialize a declared result, then validate it using the stored schema. |
 
-Inherited Module reflection and Strict `__call_method__` implement
-ordinary Python checks. Sync and async methods are supported without
-constraining argument count, argument names or protocol identity.
-Ordinary calls are unchanged. External JSON validation rejects incorrect
-shapes and non-finite numbers before O construction. A wrong Python
-type raises TypeError; invalid JSON raises jsonschema.ValidationError
-(or ValueError for non-finite numbers). Native Resource carriers are
-never read by type checking; their content is encoded explicitly after
-a read. Existing O persistent value lifetime still applies.
-MCP and HTTP own their protocol envelopes and publication rules.
+Pass a descriptor from the selected method's `__signature__`, not a bare
+type. No operation regenerates schemas. Direct Python calls do not coerce
+values. External JSON validation rejects incorrect shapes and non-finite
+numbers. The mixin does not authorize or publish methods. MCP and HTTP own
+their protocol envelopes and publication rules.
 
 ### Annotation persistence
 

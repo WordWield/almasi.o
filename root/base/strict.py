@@ -2,15 +2,14 @@
 # STRICT
 # ==============================================================================
 # PURPOSE:
-# Extend automatic Python method checks with explicit O data conversion.
+# Extend checked Python methods with a fixed JSON contract for O values.
 #
 # RESPONSIBILITY BOUNDARIES:
-# Owns: Validation of external data against concrete O declarations.
-# Delegates: Python method contracts to Core and conversion to O.
+# Owns: Schema preparation and validation of external values.
+# Delegates: Method contracts to Core, schemas and conversion to O.
 # ==============================================================================
 
 import json
-from typing import get_args, get_origin
 
 from jsonschema  import Draft202012Validator
 from referencing import Registry
@@ -24,61 +23,61 @@ class Strict(a.base.Strict):
 	# FRAMEWORK METHODS
 	# ======================================================================
 
-	# Describe data, including the declared contents of a resource.
+	# Validate JSON against the schema prepared for the declared value.
 	# ----------------------------------------------------------------------
-	@classmethod
-	def __get_schema__(cls, annotation):
-		data_type = cls._get_data_type(annotation)
-
-		return {'type': 'null'} if data_type is type(None) else data_type.to_json_schema()
-
-	# Return validated external data without constructing an O entity.
-	# ----------------------------------------------------------------------
-	def __validate__(self, annotation, value):
+	def __validate__(self, field, value):
 		json.dumps(value, allow_nan=False)
-		schema = self.__get_schema__(annotation)
-		Draft202012Validator.check_schema(schema)
-		Draft202012Validator(schema, registry=Registry()).validate(value)
+		Draft202012Validator(field['jsonschema'], registry=Registry()).validate(value)
 
 		return value
 
 	# Validate external data before constructing an O entity.
 	# ----------------------------------------------------------------------
-	def __to_o__(self, data_type, value):
-		if get_origin(data_type) is not a.Resource:
-			value  = self.__validate__(data_type, value)
-			result = None if data_type is type(None) else o.services.Entity.cast(data_type, value)
-		else:
-			raise TypeError('Cannot construct a resource from data')
+	def __to_o__(self, field, value):
+		data_type = field['type']
+		value     = self.__validate__(field, value)
+		result    = o.services.Entity.cast(data_type, value)
 
 		return self._check_type(result, data_type)
 
-	# Validate actual O content before serializing it.
+	# Serialize a checked result and validate its external representation.
 	# ----------------------------------------------------------------------
-	def __from_o__(self, annotation, value):
-		data_type = self._get_data_type(annotation)
-		value     = self._check_type(value, data_type)
-		result    = None if data_type is type(None) else value.to_data()
+	def __from_o__(self, field, value):
+		value = self._check_type(value, field['type'])
+		data  = None if value is None else value.to_data()
 
-		return self.__validate__(data_type, result)
+		return self.__validate__(field, data)
 
 	# ======================================================================
 	# PRIVATE METHODS
 	# ======================================================================
 
-	# Resolve a concrete data type without reading a resource carrier.
+	# Prepare the JSON contract before publishing the checked method.
+	# ----------------------------------------------------------------------
+	@classmethod
+	def _decorate_method(cls, method, signature):
+		for field in signature['inputs'].values():
+			cls._prepare_schema(field)
+
+		output = signature['output']
+
+		if output['type'] is type(None):
+			output['jsonschema'] = {'type': 'null'}
+		else:
+			cls._prepare_schema(output)
+
+		return super()._decorate_method(method, signature)
+
+	# Derive and check the schema of a concrete O type once.
 	# ----------------------------------------------------------------------
 	@staticmethod
-	def _get_data_type(annotation):
-		is_resource = get_origin(annotation) is a.Resource
-		data_type   = get_args(annotation)[0] if is_resource else annotation
+	def _prepare_schema(field):
+		data_type    = field['type']
+		is_data_type = isinstance(data_type, type) and issubclass(data_type, o.T) and data_type is not o.T
 
-		is_data_type = isinstance(data_type, type) and data_type is not o.T and issubclass(data_type, o.T)
-		is_null      = not is_resource and data_type is type(None)
-
-		if is_data_type or is_null:
-			result = data_type
+		if is_data_type:
+			schema = data_type.to_json_schema()
+			Draft202012Validator.check_schema(schema)
+			field['jsonschema'] = schema
 		else:
-			raise TypeError('Expected a concrete O type or NoneType outside a resource')
-
-		return result
+			raise TypeError(f'Expected a concrete O type, got {data_type!r}')
