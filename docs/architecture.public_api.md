@@ -1,8 +1,8 @@
 # Architecture: Public API of O
 
 **Status:** Normative boundary for applications; observation coverage describes the current implementation and must be verified by tests.
-**Companions:** [Read Tracker](architecture.tracker.md), [InnerChanges notifications](architecture.sync.md).
-**Sources:** `o.py`, `root/t.py`, `root/t_meta.py`, `root/v.py`, `root/list.py`, `root/dict.py`, `root/services/tracker.py`, `root/services/memory.py`, `root/services/inner_changes.py`.
+**Companions:** [Read Tracker](architecture.tracker.md), [Changes notifications](architecture.sync.md).
+**Sources:** `o.py`, `root/t.py`, `root/t_meta.py`, `root/v.py`, `root/list.py`, `root/dict.py`, `root/services/tracker.py`, `root/services/memory.py`, `root/services/changes.py`.
 **Related:** [Fork architecture](architecture.fork.md), [Tree mode](tree_mode.md).
 
 ## Foundational rule
@@ -95,7 +95,7 @@ A collection can contain references, and tree mode imposes additional ownership 
 
 ## Read dependencies and committed write notifications
 
-`Tracker.track_reads(ids)` collects read-owner IDs only. Write-owner IDs are supplied explicitly by O at persistence boundaries and delivered by its in-process `InnerChanges` service. These are distinct mechanisms; their identities must agree for a reactive result to become invalidated correctly.
+`Tracker.track_reads(ids)` collects read-owner IDs only. Write-owner IDs are supplied explicitly by O at persistence boundaries and delivered by its in-process `Changes` service. These are distinct mechanisms; their identities must agree for a reactive result to become invalidated correctly.
 
 | Operation family | Read dependencies via Tracker | Write invalidation via O persistence |
 | --- | --- | --- |
@@ -158,9 +158,9 @@ This is a necessary correctness condition, not a claim that all public transform
 
 `Tracker` records **reads only** and does not determine transaction
 success. `MemoryBatch` collects affected owner IDs during LMDB write
-transactions, publishes them through `InnerChanges.publish_change(ids, local=True)`
+transactions, publishes them through `Changes.publish_change(ids, local=True)`
 only after a successful outermost commit, and discards them on rollback.
-O initializes InnerChanges with its world; the former `Memory.ipl` callback API
+O initializes Changes with its world; the former `Memory.ipl` callback API
 no longer exists.
 
 Infrastructure writes require an owner ID or an iterable of affected owner
@@ -173,13 +173,13 @@ missing key or an empty prefix does not notify. These methods are
 Nested write scopes share one transaction; an inner failure poisons the
 outer transaction even if caught. Rollbacks restore tracked Zone caches
 and internal Memory reads during an open write see staged changes. If
-post-commit InnerChanges publication fails, LMDB **has committed** and O raises
-`RuntimeError('LMDB committed; Sync publication failed')`.
+post-commit Changes publication fails, LMDB **has committed** and O raises
+`RuntimeError('LMDB committed; Changes publication failed')`.
 
-InnerChanges delivers committed owner-ID invalidations asynchronously through
+Changes delivers committed owner-ID invalidations asynchronously through
 its process-lifetime worker, without speculative pre-commit notifications.
 Consumers must refetch committed state and replace tracked dependencies
-on recomputation. InnerChanges's exact scheduling/filtering contract is in
+on recomputation. Changes's exact scheduling/filtering contract is in
 [architecture.sync.md](architecture.sync.md); optional host-local IPC is
 described in [architecture.transport.md](architecture.transport.md).
 
@@ -192,11 +192,11 @@ Relevant tests and benchmarks:
 - `root/tests/test_tracker.py`: read instrumentation, cached/uncached fields, collections, nested scopes, threads/tasks and forks.
 - `root/tests/test_tracker_transparency.py`: public behavior with no read tracking versus `'r'`.
 - `root/tests/test_tracker_public_api.py`: traversal, empty enumerations, lifecycle dependency intersections and existence checks.
-- `root/tests/test_write_tracking.py`: explicit write owners, InnerChanges producer callbacks, commit/rollback boundaries and write-cache recovery.
+- `root/tests/test_write_tracking.py`: explicit write owners, Changes producer callbacks, commit/rollback boundaries and write-cache recovery.
 - `root/tests/test_sync.py`: in-process delivery, filters, concurrency and commit visibility.
 - `root/tests/_test_performance_tracker.py`: compare `none` with `r`, not removed `w`/`rw` modes.
-- `root/tests/_test_performance_write_tracking.py`: compare native InnerChanges with a local producer stub (`--sync native` / `--sync stub`); network IPC is outside the benchmark.
+- `root/tests/_test_performance_write_tracking.py`: compare native Changes with a local producer stub (`--sync native` / `--sync stub`); network IPC is outside the benchmark.
 
-Tracker read interceptors remain **temporary**. Outside active read scopes original Python descriptors must be restored. InnerChanges write notifications are independent of Tracker scopes. A new feature must be verified for both read dependencies and committed write-owner coverage before claiming reactive correctness.
+Tracker read interceptors remain **temporary**. Outside active read scopes original Python descriptors must be restored. Changes write notifications are independent of Tracker scopes. A new feature must be verified for both read dependencies and committed write-owner coverage before claiming reactive correctness.
 
 See [architecture.tracker.md](architecture.tracker.md) for read instrumentation and [architecture.sync.md](architecture.sync.md) for post-commit write notifications, worker lifetime and subscriber behavior.

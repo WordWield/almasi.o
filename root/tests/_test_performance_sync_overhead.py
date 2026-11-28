@@ -43,7 +43,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 
 		try:
 			sync.publish_change([DRAIN_ID])
-			assert done.wait(10), 'Sync worker did not drain'
+			assert done.wait(10), 'Changes worker did not drain'
 		finally:
 			cls._cancel(callback)
 
@@ -67,7 +67,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 			o.start(multiprocess=False)
 
 			memory   = o.services.Memory
-			sync     = o.services.InnerChanges
+			sync     = o.services.Changes
 			release  = threading.Event()
 			entered  = threading.Event()
 			callback = None
@@ -216,7 +216,7 @@ class TestPerformanceSyncOverhead(o.Tester):
 			type(o).__app__ = SimpleNamespace(__lib_path__=directory)
 			o.start(multiprocess=False)
 
-			sync   = o.services.InnerChanges
+			sync   = o.services.Changes
 			result = {}
 
 			try:
@@ -296,8 +296,8 @@ if __name__ == '__main__':
 			print(f'{mode:12} {columns[0]:>27} {columns[1]:>27}')
 
 		print()
-		print('stub: no Sync publication')
+		print('stub: no Changes publication')
 		print('paused: real queue, worker blocked during timing')
-		print('worker: active Sync, no observers; local notifications are skipped')
-		print('subscriber: real Sync, one no-op subscriber')
+		print('worker: active Changes, no observers; local notifications are skipped')
+		print('subscriber: real Changes, one no-op subscriber')
 		print('Differences include thread scheduling/GIL, not just method execution.')

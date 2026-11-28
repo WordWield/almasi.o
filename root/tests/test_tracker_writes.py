@@ -28,7 +28,7 @@ class TestTrackerWrites(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_commit_observer_lifetime(cls):
-		sync = o.services.InnerChanges
+		sync = o.services.Changes
 
 		assert sync._commits is None
 		first  = sync.watch_commits(Mock())
@@ -222,7 +222,7 @@ class TestTrackerWrites(o.Tester):
 
 		try:
 			callback    = Mock()
-			sync        = o.services.InnerChanges
+			sync        = o.services.Changes
 			observation = sync.watch_commits(callback)
 
 			try:
@@ -244,7 +244,7 @@ class TestTrackerWrites(o.Tester):
 		state = cls._patch_runtime()
 
 		try:
-			sync = o.services.InnerChanges
+			sync = o.services.Changes
 
 			with o.services.Tracker.track_writes() as writes:
 				sync.publish_change([801], local=False)
@@ -263,7 +263,7 @@ class TestTrackerWrites(o.Tester):
 		try:
 			with o.services.Tracker.track_writes() as writes:
 				thread = threading.Thread(
-					target = o.services.InnerChanges.publish_change,
+					target = o.services.Changes.publish_change,
 					args   = ([901],),
 					kwargs = {'local': False},
 				)
@@ -356,7 +356,7 @@ class TestTrackerWrites(o.Tester):
 
 		try:
 			tracker  = o.services.Tracker
-			sync     = o.services.InnerChanges
+			sync     = o.services.Changes
 			original = type(sync).__dict__['publish_change']
 			writes   = None
 			failed   = False
@@ -398,7 +398,7 @@ class TestTrackerWrites(o.Tester):
 		finally:
 			cls._restore_runtime(state)
 
-	# Each ontology fork uses its own Sync publisher and Tracker scopes.
+	# Each ontology fork uses its own Changes publisher and Tracker scopes.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_fork_isolation(cls):

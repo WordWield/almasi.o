@@ -5,7 +5,7 @@
 # Verify committed local/remote delivery, isolation, and LMDB integration.
 #
 # RESPONSIBILITY BOUNDARIES:
-# Owns: Assertions for Sync delivery and transaction integration.
+# Owns: Assertions for Changes delivery and transaction integration.
 # Delegates: Notification matching and listener delivery to production code.
 # ==============================================================================
 
@@ -39,7 +39,7 @@ class TestSync(o.Tester):
 
 				self._deliver([event])
 
-		service_type = type('SyncTest', (type(o.services.InnerChanges),), {'_run_worker_loop': run_worker})
+		service_type = type('SyncTest', (type(o.services.Changes),), {'_run_worker_loop': run_worker})
 		service      = service_type()
 		service._test_stop = object()
 		service.initialize()
@@ -94,7 +94,7 @@ class TestSync(o.Tester):
 	# ----------------------------------------------------------------------
 	@classmethod
 	def test_coalesced_publication_order(cls):
-		sync      = o.services.InnerChanges
+		sync      = o.services.Changes
 		entered   = threading.Event()
 		release   = threading.Event()
 		received  = Queue()
@@ -104,7 +104,7 @@ class TestSync(o.Tester):
 		# --------------------------------------------------------------
 		def block(ids):
 			entered.set()
-			assert release.wait(timeout=5), 'Sync worker did not resume'
+			assert release.wait(timeout=5), 'Changes worker did not resume'
 
 		blocker  = sync.subscribe({1000001}, block)
 		listener = sync.subscribe({11, 22, 33, 44, 55}, received.put)
@@ -112,7 +112,7 @@ class TestSync(o.Tester):
 
 		try:
 			sync.publish_change([1000001])
-			assert entered.wait(timeout=5), 'Sync worker did not enter callback'
+			assert entered.wait(timeout=5), 'Changes worker did not enter callback'
 
 			sync.publish_change([11, 11])
 			sync.publish_change([22])

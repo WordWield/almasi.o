@@ -1,15 +1,16 @@
 # ==============================================================================
-# INNER CHANGES SERVICE
+# CHANGES SERVICE
 # ==============================================================================
 # PURPOSE:
-# Deliver committed local and remote owner changes inside one ontology.
+# Queue committed changes from memory and transport through one worker.
 #
 # RESPONSIBILITY BOUNDARIES:
 # Owns: Resource dependency matching and committed change delivery.
-# Delegates: Remote cache invalidation to OuterChanges and listener delivery
-# to Resource.
+# Delegates: Listener registration and callback dispatch to Resource.
 # ==============================================================================
 
+import logging
+import os
 import threading
 
 from functools import partial
@@ -19,7 +20,7 @@ from time      import sleep
 from almasi import o
 
 
-class InnerChanges(o.Singleton):
+class Changes(o.Singleton):
 
 	# ======================================================================
 	# PRIVATE METHODS
@@ -97,7 +98,11 @@ class InnerChanges(o.Singleton):
 	# ----------------------------------------------------------------------
 	def _update(self, ids, local=True):
 		if not local:
-			o.services.OuterChanges.invalidate(ids)
+			try:
+				o.services.Cache.invalidate(ids)
+			except Exception:
+				logging.exception('Critical cache invalidation failure')
+				os._exit(1)
 
 		self._dispatch(ids, local)
 
@@ -163,7 +168,7 @@ class InnerChanges(o.Singleton):
 
 		self._worker = threading.Thread(
 			target = self._run_worker_loop,
-			name   = 'o-sync',
+			name   = 'o-changes',
 			daemon = True,
 		)
 		self._worker.start()

@@ -77,7 +77,7 @@ This is not a SQL ORM with hidden mapping. The ontology owns persistent types, e
 | JSON, JSON Schema, prompt schema | Derive external representations from the same type system |
 | Structural serialization | Carry definitions needed to reconstruct runtime-defined types |
 | Transactions and LMDB | Group persistent changes and preserve storage integrity |
-| Tracker and InnerChanges | Observe supported public reads and notify affected owners after commits |
+| Tracker and Changes | Observe supported public reads and notify affected owners after commits |
 
 ### Types carry meaning
 

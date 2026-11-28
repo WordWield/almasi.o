@@ -2,7 +2,7 @@
 # TEST PERFORMANCE SYNC
 # ==============================================================================
 # Compare committed writes and notification latency with no delivery,
-# in-process Sync, and host-local IPC.
+# in-process Changes, and host-local IPC.
 # ==============================================================================
 
 import argparse
@@ -47,7 +47,7 @@ class TestPerformanceSync(o.Tester):
 			o.start(multiprocess=mode == 'ipc')
 
 			memory = o.services.Memory
-			sync   = o.services.InnerChanges
+			sync   = o.services.Changes
 			result = {}
 
 			if mode == 'stub':
@@ -91,8 +91,8 @@ class TestPerformanceSync(o.Tester):
 			else:
 				result['delivery_latency'] = None
 
-			# Observe normal local Sync delivery during the throughput run.
-			# Otherwise an unobserved Sync would correctly skip queueing.
+			# Observe normal local Changes delivery during the throughput run.
+			# Otherwise an unobserved Changes would correctly skip queueing.
 			# --------------------------------------------------------------
 			observer = sync.subscribe(lambda ids: None) if mode == 'sync' else None
 
@@ -126,7 +126,7 @@ class TestPerformanceSync(o.Tester):
 	# PUBLIC METHODS
 	# ======================================================================
 
-	# Measure the current implementation without historical Sync internals.
+	# Measure the current implementation without historical Changes internals.
 	# ----------------------------------------------------------------------
 	@classmethod
 	def measure(cls, mode, size, latency_samples):
@@ -198,6 +198,6 @@ if __name__ == '__main__':
 				print(f'{mode:8}   {columns[0]:22} {columns[1]:22} {columns[2]}')
 
 		print()
-		print('stub = LMDB + owner tracking, no Sync delivery')
-		print('sync = in-process Sync with observer; ipc = Sync plus relay and a second socket peer')
+		print('stub = LMDB + owner tracking, no Changes delivery')
+		print('sync = in-process Changes with observer; ipc = Changes plus relay and a second socket peer')
 		print('Delivery latency: local callback (sync) or peer frame receipt (ipc).')

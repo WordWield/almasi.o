@@ -106,7 +106,7 @@ class Transport(o.Singleton):
 
 					# A disconnected writer may have missed notifying peers.
 					# ------------------------------------------------------
-					o.services.OuterChanges.receive(None)
+					self.sync.publish_change(None, local=False)
 					self.send(None)
 			else:
 				try:
@@ -117,7 +117,7 @@ class Transport(o.Singleton):
 
 					ids = json.loads(frame)
 					ids = None if ids is None else frozenset(ids)
-					o.services.OuterChanges.receive(ids)
+					self.sync.publish_change(ids, local=False)
 				except (OSError, ValueError, ConnectionError):
 					with self._lock:
 						if self._connection is connection:

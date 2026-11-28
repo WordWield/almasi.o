@@ -7,10 +7,10 @@
 O already owns the application-level contract:
 
 - `Memory` reports changed owner IDs when writes commit.
-- `InnerChanges` normalizes each committed batch and dispatches subscriptions.
+- `Changes` normalizes each committed batch and dispatches subscriptions.
 - `Cache` invalidates existing O entities without changing identity.
 
-`Transport` only carries invalidation sets between processes. It never reads or transfers LMDB values. It subscribes via `InnerChanges.subscribe(self.send, local_only=True)` to forward locally originated invalidations only. Incoming messages use `OuterChanges.receive(ids)`, which enqueues them in InnerChanges. On its existing worker, OuterChanges invalidates local caches before InnerChanges notifies ordinary subscribers without echoing these messages.
+`Transport` only carries invalidation sets between processes. It never reads or transfers LMDB values. It subscribes via `Changes.subscribe(self.send, local_only=True)` to forward locally originated invalidations only. Incoming messages use `Changes.publish_change(ids, local=False)`: the Changes worker invalidates local caches, then notifies ordinary subscribers without echoing these messages.
 
 ## Layout
 
@@ -19,8 +19,7 @@ o/
 ├── o.py
 ├── root/
 │   ├── services/
-│   │   ├── inner_changes.py
-│   │   ├── outer_changes.py
+│   │   ├── changes.py
 │   │   ├── cache.py
 │   │   └── transport.py  # Almasi O.Transport service
 │   └── tests/
@@ -33,7 +32,7 @@ The service derives the daemon script path from its own `__file__` with `os.path
 
 ## Startup and lifetime
 
-`o.start()` defaults to **in-process only**: it does not initialize `Transport` or launch the daemon. `o.start(multiprocess=True)` activates IPC for that ontology after `InnerChanges`, `Memory` and ontology classes are ready. The first client starts the daemon if its Unix socket is absent. A nonblocking OS file lock prevents simultaneous processes from creating competing relays. Other clients connect to that same socket.
+`o.start()` defaults to **in-process only**: it does not initialize `Transport` or launch the daemon. `o.start(multiprocess=True)` activates IPC for that ontology after `Changes`, `Memory` and ontology classes are ready. The first client starts the daemon if its Unix socket is absent. A nonblocking OS file lock prevents simultaneous processes from creating competing relays. Other clients connect to that same socket.
 
 Once enabled in a process, Transport remains active for the application lifetime.
 A subsequent `o.start(multiprocess=False)` does **not** disable an already
@@ -42,7 +41,7 @@ its receiver worker is a daemon thread. Each O fork enables IPC independently.
 
 The daemon stops approximately three seconds after the final client disconnects. It is a normal subprocess, not a second O ontology or an Almasi service. The socket directory defaults to a private directory named `o-transport-<uid>` beneath `tempfile.gettempdir()`. `O_TRANSPORT_DIR` may specify a shared, private directory for a deployment; it must be owned by the calling UID and inaccessible to group/other users.
 
-On initial connection, O clears its local cache before `o.start()` returns. If the daemon disconnects, clients reconnect, notify OuterChanges with `None`, and send `None` to peers to repair possibly missed invalidations.
+On initial connection, O clears its local cache before `o.start()` returns. If the daemon disconnects, clients reconnect, notify local Changes with `None`, and send `None` to peers to repair possibly missed invalidations.
 
 ## Wire protocol
 
@@ -62,7 +61,7 @@ Frames are newline-separated JSON; the path is bound to the connection and is no
 The relay uses nonblocking `selectors`, bounds input/output buffers, and
 validates incoming message types and positive integer IDs. The receiving
 Transport service only decodes JSON and converts non-null ID arrays to
-`frozenset` for InnerChanges; it does not repeat the relay’s ID validation.
+`frozenset` for Changes; it does not repeat the relay’s ID validation.
 The sender serializes its ID set to a JSON list without sorting. ID order has
 no meaning in the wire protocol. It does not read or authorize database
 contents; access to LMDB is controlled separately.
@@ -76,7 +75,7 @@ contents; access to LMDB is controlled separately.
   invalidation (`null` on the wire / `None` in Python), but there is no
   persistent replay or exactly-once guarantee. Events may be lost on process exit.
 - Existing local subscribe/unsubscribe semantics remain unchanged. Critical
-  remote cache invalidation failures cause OuterChanges on the InnerChanges worker to log and
+  remote cache invalidation failures cause the Changes worker to log and
   terminate the process with exit code `1` rather than retain stale data.
 - This transport works between processes on **one host**. Across containers, the Unix socket directory and the actual LMDB files must be shared and correctly permissioned; merely running a daemon inside an ephemeral application container does not give it a host-independent lifecycle.
 - TCP, cross-host consistency, deployment orchestration, and storage sharding are outside this feature.

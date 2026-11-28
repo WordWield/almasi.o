@@ -328,7 +328,7 @@ class Tracker(o.Singleton):
 			elif None not in writes:
 				writes.update(ids)
 
-	# Preserve read observations when InnerChanges also reports commit origins.
+	# Preserve read observations when Changes also reports commit origins.
 	# ----------------------------------------------------------------------
 	def _observe_read_change(self, resource, changed):
 		resource._observe_change(changed[0])
@@ -344,7 +344,7 @@ class Tracker(o.Singleton):
 	def track_writes(self):
 		writes       = set()
 		callback     = partial(self._record_write_change, writes, threading.get_ident(), self._current_task())
-		observation  = self.__lib__.services.InnerChanges.watch_commits(callback)
+		observation  = self.__lib__.services.Changes.watch_commits(callback)
 
 		try:
 			yield writes
@@ -364,7 +364,7 @@ class Tracker(o.Singleton):
 		try:
 			# Observe new owners while the computation is in flight.
 			# --------------------------------------------------------------
-			observation = o.services.InnerChanges.watch_commits(partial(self._observe_read_change, resource))
+			observation = o.services.Changes.watch_commits(partial(self._observe_read_change, resource))
 
 			self._enter(reads)
 
@@ -373,7 +373,7 @@ class Tracker(o.Singleton):
 			except BaseException:
 				raise
 			else:
-				resource._commit(reads, o.services.InnerChanges)
+				resource._commit(reads, o.services.Changes)
 			finally:
 				self._exit(reads)
 		finally:

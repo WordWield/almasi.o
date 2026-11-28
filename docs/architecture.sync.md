@@ -1,14 +1,9 @@
-# Architecture: InnerChanges — owner-ID invalidation delivery
+# Architecture: Changes — owner-ID invalidation delivery
 
 **Status:** Implemented in-process notification service with optional host-local
 Transport forwarding; not a durable event log.
 
-`InnerChanges` owns in-process subscription matching, the publication lock,
-and the single delivery worker. `OuterChanges` receives interprocess
-invalidations from Transport and applies remote cache invalidation on that
-same worker before local delivery. It has no separate queue or worker.
-
-**Sources:** `root/services/inner_changes.py`, `root/services/outer_changes.py`, `root/services/memory.py`,
+**Sources:** `root/services/changes.py`, `root/services/memory.py`,
 `root/services/ontology.py`.
 **Tests:** `root/tests/test_sync.py`, `root/tests/test_write_tracking.py`.
 **Related:** [Tracker](architecture.tracker.md),
@@ -23,7 +18,7 @@ Three separate owners provide reactive state:
 1. **Tracker** records IDs of persistent objects *read* by a computation.
    It neither intercepts writes nor registers subscribers.
 2. **Memory/Zone** persist changes and supply the affected owner IDs to
-   **InnerChanges**, independently of Tracker scopes.
+   **Changes**, independently of Tracker scopes.
 3. **Computed** owns the cached computation, its dependencies and
    subscriptions. The consumer owns refetch policy and network delivery.
 
@@ -46,27 +41,27 @@ After the application has been selected via Almasi:
 from almasi import o
 
 o.start()
-sync = o.services.InnerChanges
+sync = o.services.Changes
 ~~~
 
-`Ontology.start()` initializes one InnerChanges service/worker per world on first
-startup; `Memory` binds to that world's InnerChanges. An `o.fork('alice')` world
-has a distinct InnerChanges, classes, caches and LMDB. Numeric IDs must never be
+`Ontology.start()` initializes one Changes service/worker per world on first
+startup; `Memory` binds to that world's Changes. An `o.fork('alice')` world
+has a distinct Changes, classes, caches and LMDB. Numeric IDs must never be
 mixed across worlds without qualifying world identity. Reopening an existing
 world's Memory does not construct a new worker.
 
 `o.start(sync=False)` is **LMDB disk-flush durability**. It does **not**
-disable the `o.services.InnerChanges` notification service. Likewise,
+disable the `o.services.Changes` notification service. Likewise,
 `tree_mode=None` restores the persisted topology mode (or defaults to
 graph for a new world), independent of notifications. See
 [architecture.fork.md](architecture.fork.md).
 
 ## Subscriber API
 
-InnerChanges indexes observed resources, not listener registrations. O implements
+Changes indexes observed resources, not listener registrations. O implements
 indexed owner-ID matching in `_dispatch()`; its worker and transport
 remain O-owned. Computed inherits its listener registry from Resource.
-InnerChanges observes each computed resource once while it has listeners. It calls
+Changes observes each computed resource once while it has listeners. It calls
 `resource.update(matching_ids)` once per matching batch; the resource clears
 its cached value before notifying its listeners. The final cancellation
 removes the resource from the dependency index. Each ordered index entry is
@@ -80,14 +75,14 @@ changed scope updates only added and removed IDs.
 | `sync.subscribe(callback=callback)` | Same, explicit keyword |
 | `sync.subscribe({id1, id2}, callback)` | Observe selected owner IDs |
 | `sync.subscribe(callback, local_only=True)` | Transport-only local changes |
-| `cancel()` (returned by InnerChanges.subscribe) | Stop future delivery (idempotent, nonblocking) |
-| `o.services.OuterChanges.receive(ids)` | Enqueue external invalidation (Transport only) |
+| `cancel()` (returned by Changes.subscribe) | Stop future delivery (idempotent, nonblocking) |
+| `sync.publish_change(ids, local=False)` | Enqueue external invalidation |
 
 Raw `sync.subscribe()` reuses one notification-only Resource per identical
 immutable scope and origin filter. It returns a distinct cancellation callable for each listener. Delivery order is registration order within a
 resource and first-observed order between resources, not a global listener
 ordering across unrelated resources. A resource snapshots its listeners at the start of its own update, not at
-the start of InnerChanges dispatch. A listener added to an already selected resource
+the start of Changes dispatch. A listener added to an already selected resource
 before its update may receive the current invalidation. A listener added during
 that resource's own update waits for the next update. Resources newly added to
 the index during dispatch are not included in the current resource snapshot. The returned callable binds the resource and its opaque registration ID. Raw scope replacement is explicit: cancel the
@@ -108,11 +103,11 @@ always queued and invalidate the local cache **before** notifying ordinary
 subscribers.
 
 Ordinary callbacks receive `frozenset[int] | None` and run on the
-`o-sync` worker thread. The internal `InnerChanges.watch_commits(callback)` contract
+`o-changes` worker thread. The internal `Changes.watch_commits(callback)` contract
 is different: a notification-only Resource owns temporary listeners that
 observe committed owner IDs synchronously on the publishing thread, before
 worker delivery. Its callbacks receive one event tuple `(ids, local)`. The commit resource
-exists only while observed; publication does not call an empty resource. `InnerChanges.commit_resource(resource, identifiers)` uses the same source
+exists only while observed; publication does not call an empty resource. `Changes.commit_resource(resource, identifiers)` uses the same source
 lock to atomically validate observed changes, replace dependency scopes, and
 publish a completed resource value. These calls are reserved for
 `Tracker.track_reads(resource)`; ordinary clients should use
@@ -152,15 +147,15 @@ owner IDs in a local list during each LMDB write transaction. Nested writes
 share the same list, and failed transactions discard it.
 
 After the outermost successful commit, `MemoryBatch` passes that complete
-list to InnerChanges in a single call, without copying or iterating it:
+list to Changes in a single call, without copying or iterating it:
 
 ~~~python
 sync.publish_change(ids, local=True)
 ~~~
 
-A local commit without InnerChanges subscribers needs no worker delivery and is
+A local commit without Changes subscribers needs no worker delivery and is
 not queued. When a temporary computed-resource commit observer exists,
-InnerChanges confirms it synchronously after commit, under the source lock, even
+Changes confirms it synchronously after commit, under the source lock, even
 though ordinary delivery stays queued. A subscribed local commit enqueues
 the existing ID list without copying it.
 A remote invalidation is always queued, even without subscribers, because it
@@ -171,13 +166,13 @@ missing-key deletions, and empty-prefix deletions do not notify. Read
 transactions do not publish.
 
 If publication fails after commit, the transaction remains committed and
-`MemoryBatch` raises `RuntimeError('LMDB committed; Sync publication failed')`.
-InnerChanges is not a durable event log and cannot guarantee delivery if the process
+`MemoryBatch` raises `RuntimeError('LMDB committed; Changes publication failed')`.
+Changes is not a durable event log and cannot guarantee delivery if the process
 crashes after committing.
 
 ## Worker and delivery timing
 
-`InnerChanges.initialize()` starts one worker. It blocks on `SimpleQueue.get()`
+`Changes.initialize()` starts one worker. It blocks on `SimpleQueue.get()`
 until a change arrives. Once an event arrives, a 100 µs window lets further
 commits accumulate; the worker then drains the queue size captured at that
 moment and delivers the resulting bounded burst. There is no idle timer,
@@ -193,16 +188,16 @@ wake flag, busy polling, or pre-commit speculative fallback.
   origin's contiguous group. The worker preserves the order of local/remote
   groups, so remote changes are never echoed to Transport. Subscriber callbacks
   are invalidation hints, not per-commit events. Individual commit counts and
-  intermediate values are not observable through InnerChanges. Subscriber failures
+  intermediate values are not observable through Changes. Subscriber failures
   remain isolated.
 - The worker is a daemon thread and runs for the application process lifetime.
-  There is no `InnerChanges.close()`, shutdown sentinel or queue flush on process exit.
+  There is no `Changes.close()`, shutdown sentinel or queue flush on process exit.
   Events still queued at exit may be lost.
-- If remote `Cache.invalidate(ids)` raises an exception, OuterChanges logs the critical
+- If remote `Cache.invalidate(ids)` raises an exception, Changes logs the critical
   failure and terminates the process with `os._exit(1)` rather than continuing
   with potentially stale cached entities.
 
-A InnerChanges callback signals that locally committed or externally announced owner
+A Changes callback signals that locally committed or externally announced owner
 state may have changed, not that the subscriber has applied the change.
 Consumers re-read committed state through O APIs.
 
@@ -217,16 +212,16 @@ Consumers re-read committed state through O APIs.
   ownership; transaction nesting, rollback, Zone cache recovery and
   post-commit failure.
 - `_test_performance_write_tracking.py --sync native` versus
-  `--sync stub` compares native InnerChanges with no-op producer callbacks, not
+  `--sync stub` compares native Changes with no-op producer callbacks, not
   distributed transport or browser latency.
 
 The common subscription mechanism is specified in
 [Almasi Resource](https://github.com/WordWield/almasi/blob/master/docs/architecture.resource.md).
 
-InnerChanges itself is **in-process, non-durable, non-replayable**. Optional Transport
-provides host-local invalidation forwarding; InnerChanges never references Transport
+Changes itself is **in-process, non-durable, non-replayable**. Optional Transport
+provides host-local invalidation forwarding; Changes never references Transport
 or owns its lifecycle. There is no revision ordering, authorization or UI
-responsibility in InnerChanges.
+responsibility in Changes.
 Consumers supply those capabilities where required. Web integrates it
-through an optional injected pair `Tracker` / `InnerChanges` without making O
+through an optional injected pair `Tracker` / `Changes` without making O
 depend on Web; see [Web MCP architecture](https://github.com/apodgorny/web/blob/master/docs/architecture.mcp.md).
