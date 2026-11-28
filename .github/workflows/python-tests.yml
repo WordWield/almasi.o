@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: WordWield/almasi.a
-          ref: 55c83538d6025352220e50b5d0d3a2560567453b
+          ref: 8fbfa9776b042caa6e6b39bfd715d79ff1818251
           path: core
 
       - name: Checkout pre-Annotation O
